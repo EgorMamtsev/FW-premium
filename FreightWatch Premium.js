@@ -38,6 +38,18 @@
       .querySelector("button.lgt-button-white");
   }
 
+  function getComentField() {
+    return document
+      .querySelector("div.post-comment")
+      .querySelector("textarea.cdk-textarea-autosize");
+  }
+
+  function getPostComentBtn() {
+    return document
+      .querySelector("lgt-form-actions.fit")
+      .querySelector("button.lgt-button-primary");
+  }
+
   //#endregion
 
   //#region Mark and Count updates
@@ -153,7 +165,9 @@
 
   //#endregion
 
-  //#region comments
+  //#region Comments
+
+  //отримуємо коментарі з локала
   function initComments() {
     let comments = localStorage.getItem("comments");
 
@@ -360,12 +374,15 @@
     localStorage.setItem("comments", JSON.stringify(commentsState));
   }
 
+  function postCommetn() {}
+
   //#endregion
 
   // Observer на таблицю (перерендери), чекає завантаження таблиці
   const highlightObserver = new MutationObserver(() => {
     if (getTbody() && getTbody().children.length > 0) {
-      restoreUpdatedRows(initUpdated());
+      restoreUpdatedRows(initUpdated()); //маркує вантажі
+      //очищення локала. видаляє фб та коменти
       if (!cleaneDone) {
         removerMissingLoads();
         cleanupComments();
@@ -403,6 +420,25 @@
       //перевірка на статус для збереження коментаря
       if (status === "At Pickup" || status === "At Delivery") {
         generateComment(fb, status, commentWrapper);
+
+        //клік на поле коментаря
+        getComentField().addEventListener("click", () => {
+          const postBnt = getPostComentBtn();
+          //клік на кнопку post
+          postBnt.addEventListener("click", () => {
+            const date = new Date();
+
+            //зберігажмо коментар який написали
+            saveComment({
+              fb: fb,
+              status: status,
+              comment: getComentField().value, //викликаємо з тим що написано
+              commentTime: `${date.getHours()}:${date.getMinutes()}`, // отримуємо наявний час
+              timeZone: findTimeZone(),
+              inTime: findInTime(),
+            });
+          });
+        });
       }
 
       // обробник на кнопку редагування
@@ -426,14 +462,14 @@
               const saveBtn = getSaveBtn();
 
               saveBtn.addEventListener("click", () => {
-                const timesAfterUpdate = countTimes(timeInputs);
+                const timesAfterUpdate = countTimes(timeInputs); //зберігаємо кількість заповнених полів часу при натисканні сейв
                 if (onFirstOpenTimes.length === timesAfterUpdate.length) {
+                  //порівнюємо масиви з часом до і після. отримуємо апдейт або лоад
                   increaseUpdate();
                   return;
                 }
 
                 increaseUpdate();
-
                 increaseLoad();
                 saveLoad(fb);
                 return;
