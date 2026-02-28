@@ -1,0 +1,127 @@
+/* збільшення вантажей при наведені */
+tr.ng-star-inserted:hover {
+  transform: scale(1.013);
+}
+/*================================*/
+
+/* маркування оновлених вантажів */
+.updated {
+  color: blue;
+  font-weight: bold;
+  font-style: italic;
+}
+/*================================*/
+
+/* максимальна ширина клітинки на випадок багу ерп */
+td {
+  max-width: 500px;
+}
+/*================================*/
+
+/* лічильник апдейтів */
+.headline5 {
+  display: flex;
+}
+.counterContainer {
+  display: flex;
+  margin: 0 0 0 10px;
+}
+.loadsCounter {
+  display: flex;
+  margin: 0 0 0px 10px;
+}
+.updateCounter {
+  display: flex;
+}
+.updateLabel {
+  margin: 0 0px 0 0;
+}
+.updateNumber {
+  margin: 0 0 0 10px;
+}
+.clearBtn {
+  margin: 0 0 0 10px;
+  border-radius: 5px;
+}
+
+.updateCounter {
+  display: flex;
+}
+.updateLabel {
+  margin: 0 0px 0 0;
+}
+.updateNumber {
+  margin: 0 0 0 10px;
+}
+.clearBtn {
+  margin: 0 0 0 10px;
+  border-radius: 5px;
+}
+/*================================*/
+
+/* відключення дефолтного лічильника */
+lgt-dispatch-stats-bar.display-flex.m-t-2.m-b-6 {
+  display: none;
+}
+
+/*================================*/
+
+/* HEADER */
+div.d-flex.justify-content-between.m-b-2 {
+  position: sticky;
+  top: 0px;
+  z-index: 2;
+  background-color: #fff;
+  padding: 30px 30px 20px 30px;
+  margin: 0;
+  border-top-left-radius: 10px;
+  border-top-right-radius: 10px;
+}
+/*================================*/
+
+/* backgrond */
+.main-layout__sidenav__content {
+  background-color: #d9ead3;
+}
+/*================================*/
+
+/* LOADS COUNTER */
+.loads-counter {
+  display: flex;
+}
+.loads-counter__item--need-to-check .loads-counter__count {
+  color: #959393;
+}
+.loads-counter__item--eta .loads-counter__count {
+  color: #d87093;
+}
+.loads-counter__item--on-site .loads-counter__count {
+  color: #bdb76b;
+}
+.loads-counter__item--in-transit .loads-counter__count {
+  color: #13b613;
+}
+.loads-counter__item--no-answer .loads-counter__count {
+  color: #cc2b2b;
+}
+
+.loads-counter__item {
+  margin-right: 80px;
+}
+
+.loads-counter__item--total {
+  margin-right: 0;
+}
+
+.loads-counter__count {
+  text-align: center;
+  font-size: 24px;
+  font-weight: bold;
+}
+
+.loads-counter__label {
+  text-align: center;
+  margin-top: 11px;
+  font-size: 20px;
+}
+/*================================*/

@@ -11,15 +11,17 @@
 (function () {
   "use strict";
 
-  //#region consts операційні змінні
+  //#region операційні змінні
   const FUTURES = {
     countUpdates: true,
     markUpdates: true,
     comments: true,
-    renderCounter: true,
+    updatesCounter: true,
+    loadsCounter: true,
+    hideSideBar: true,
   };
 
-  let cleaneDone = false;
+  // let cleaneDone = false;
 
   //#endregion
 
@@ -140,6 +142,8 @@
     updatedState = initUpdated();
     updatedState.loads += 1;
     localStorage.setItem("updated", JSON.stringify(updatedState));
+
+    showStats(); // оновлення лічильника апдейтів createUpdatesCounter
   }
   // додає +1 до updates, підрахунок апдейтів
 
@@ -150,7 +154,10 @@
     updatedState = initUpdated();
     updatedState.updates += 1;
     localStorage.setItem("updated", JSON.stringify(updatedState));
+
+    showStats(); // оновлення лічильника апдейтів createUpdatesCounter
   }
+
   // рахує кількість заповнених інпутів часу для порівняння і розуміння +loads або +updates
   function countTimes(range) {
     const times = [];
@@ -378,20 +385,238 @@
 
   //#endregion
 
-  // Observer на таблицю (перерендери), чекає завантаження таблиці
+  //#region LoadsCounter
+
+  const counters = {};
+
+  //створюємо лічильник
+  function createLoadsCounter() {
+    if (!FUTURES.loadsCounter) {
+      return;
+    }
+    const container = document.querySelector(".m-b-2");
+    const dispatchDeliveredBnts = document.querySelector(
+      ".toggle-buttons-wrapper",
+    );
+
+    const loadsCounter = document.createElement("div");
+    loadsCounter.classList.add("loads-counter");
+
+    container.insertBefore(loadsCounter, dispatchDeliveredBnts);
+
+    counters.whiteLoads = createCounterItem("need-to-check", "Need to check");
+    counters.pinkLoads = createCounterItem("eta", "ETA");
+    counters.yellowLoads = createCounterItem("on-site", "On site");
+    counters.greenLoads = createCounterItem("in-transit", "In transit");
+    counters.noAnswerLoads = createCounterItem("no-answer", "N/A");
+    counters.totatlLoads = createCounterItem("total", "Total");
+
+    loadsCounter.append(
+      counters.whiteLoads.element,
+      counters.pinkLoads.element,
+      counters.yellowLoads.element,
+      counters.greenLoads.element,
+      counters.noAnswerLoads.element,
+      counters.totatlLoads.element,
+    );
+  }
+
+  //функція шаблон для створення елементів лічильника
+  function createCounterItem(mod, itemLabel) {
+    // загальний блок для лейбла і підрахунку
+    const item = document.createElement("div");
+    item.classList.add("loads-counter__item", `loads-counter__item--${mod}`);
+
+    // блок з підрахунком(числом)
+    const numberOfLoads = document.createElement("div");
+    numberOfLoads.classList.add("loads-counter__count");
+
+    //текст елементу
+    const label = document.createElement("div");
+    label.classList.add("loads-counter__label");
+    label.textContent = itemLabel;
+
+    item.append(numberOfLoads, label);
+
+    return { element: item, numberOfElem: numberOfLoads };
+  }
+
+  // функції рахування
+  function countPink() {
+    const pinkLoads = getTbody().querySelectorAll("tr.pink");
+    const countPink = pinkLoads.length;
+    counters.pinkLoads.numberOfElem.textContent = countPink;
+  }
+
+  function countYellow() {
+    const yellowLoads = getTbody().querySelectorAll("tr.orange");
+    const countYellow = yellowLoads.length;
+    counters.yellowLoads.numberOfElem.textContent = countYellow;
+  }
+
+  function countGreen() {
+    const greenLoads = getTbody().querySelectorAll("tr.green");
+    const countGreen = greenLoads.length;
+    counters.greenLoads.numberOfElem.textContent = countGreen;
+  }
+
+  function countNAloads() {
+    const noAnswerLoads = getTbody().querySelectorAll("tr.red");
+    const countNA = noAnswerLoads.length;
+    counters.noAnswerLoads.numberOfElem.textContent = countNA;
+  }
+
+  function countTotal() {
+    const totatlLoads = getTbody().querySelectorAll("tr");
+    const countTotal = totatlLoads.length;
+    counters.totatlLoads.numberOfElem.textContent = countTotal;
+  }
+
+  function countWhiteLoads() {
+    const total = getTbody().querySelectorAll("tr").length;
+    const colored = getTbody().querySelectorAll(
+      "tr.pink, tr.orange, tr.green, tr.red",
+    ).length;
+
+    const count = total - colored;
+
+    counters.whiteLoads.numberOfElem.textContent = count;
+  }
+
+  //функція починає рахувати
+  function startCount() {
+    if (!FUTURES.loadsCounter) {
+      return;
+    }
+    countWhiteLoads();
+    countPink();
+    countYellow();
+    countGreen();
+    countNAloads();
+    countTotal();
+  }
+  //#endregion
+
+  //#region UpdatesCounter
+
+  function createUpdatesCounter() {
+    if (!FUTURES.updatesCounter) {
+      return;
+    }
+    // батьківський контейнер
+    const elemBeforeCounter = document.querySelector(".headline5");
+    const counterContainer = createElem("div", "counterContainer");
+    elemBeforeCounter.append(counterContainer);
+
+    // Updates блок
+    const updateCounter = createElem("div", "updateCounter");
+    const updateLabel = createElem("div", "updateLabel", "Updates");
+    const numberOfUpdates = createElem("div", "updateNumber");
+    updateCounter.append(updateLabel, numberOfUpdates);
+    counterContainer.append(updateCounter);
+
+    // Loads блок
+    const loadsCounter = createElem("div", "loadsCounter");
+    const loadsLabel = createElem("div", "loadsLabel", "Loads");
+    const numberOfLoads = createElem("div", "updateNumber");
+    loadsCounter.append(loadsLabel, numberOfLoads);
+    counterContainer.append(loadsCounter);
+
+    // Clear button
+    const clearBtn = createElem("button", "clearBtn", "clear");
+    counterContainer.append(clearBtn);
+    clearBtn.addEventListener("click", function () {
+      updatedState.updates = 0;
+      updatedState.loads = 0;
+      localStorage.setItem("updated", JSON.stringify(updatedState));
+      showStats();
+    });
+
+    numberOfUpdates.textContent = updatedState.updates;
+    numberOfLoads.textContent = updatedState.loads;
+  }
+
+  function showStats() {
+    if (!FUTURES.updatesCounter) {
+      return;
+    }
+    document.querySelector(".updateCounter .updateNumber").textContent =
+      updatedState.updates;
+    document.querySelector(".loadsCounter .updateNumber").textContent =
+      updatedState.loads;
+  }
+
+  //шаблон для створення елементів лічильника
+  function createElem(tag, className, textContent) {
+    const el = document.createElement(tag);
+    if (className) el.classList.add(className);
+    if (textContent) el.textContent = textContent;
+    return el;
+  }
+
+  //#endregion
+
+  //#region Hide SideBar
+  function hideSideBar() {
+    if (!FUTURES.hideSideBar) {
+      return;
+    }
+
+    const sideBtn = document.querySelector(".side-menu__toggle");
+    sideBtn.click();
+  }
+  //#endregion
+
+  //#region Observers
+
+  //обсервер вимикається при завантаженні таблиці ОБОВ'ЯЗКОВО ВИМИКАТИ ДО ІНШИХ ФУНКЦІЙ
+  //для функцій які мають спрацювати лише раз
+  const pageLoadingObserver = new MutationObserver(() => {
+    if (getTbody() && getTbody().children.length > 0) {
+      pageLoadingObserver.disconnect(); // вимикаєм до виклику функці
+
+      createUpdatesCounter(); // створюємо лічильник апдейтів
+      hideSideBar(); // hide sidebar
+
+      //очищення локала. видаляє фб та коменти
+      removerMissingLoads(); //видаляємо коментарі
+      cleanupComments(); //видалямо вантажі які зникли
+
+      //створюємо лічільник
+      createLoadsCounter();
+      //обсервер на сторінку щоб бачити зміну кількості рядків
+      const loadsCounterObserver = new MutationObserver(() => {
+        startCount();
+      });
+      loadsCounterObserver.observe(getTbody(), {
+        childList: true, // додавання/видалення рядків
+        subtree: true, // зміни у вкладених елементах (наприклад, <td>)
+        attributes: true, // зміни атрибутів
+        attributeFilter: ["class"], // тільки якщо змінюється class
+      });
+    }
+  });
+  pageLoadingObserver.observe(document.body, {
+    childList: true,
+    subtree: true,
+  });
+
+  // Observer на таблицю (перерендери), чекає завантаження таблиці та ПРАЦЮЄ ЗАВЖДИ
   const highlightObserver = new MutationObserver(() => {
     if (getTbody() && getTbody().children.length > 0) {
       restoreUpdatedRows(initUpdated()); //маркує вантажі
+
       //очищення локала. видаляє фб та коменти
-      if (!cleaneDone) {
-        removerMissingLoads();
-        cleanupComments();
-        cleaneDone = true;
-      }
+      // if (!cleaneDone) {
+      //   removerMissingLoads();
+      //   cleanupComments();
+      //   cleaneDone = true;
+      // }
     }
   });
 
   highlightObserver.observe(document.body, { childList: true, subtree: true });
+  //#endregion
 
   // Обробка кліку на рядок
   document.body.addEventListener("click", (e) => {
@@ -408,8 +633,11 @@
       const commentWrapper = document
         .querySelector("div.dispatch-comments")
         .querySelector("div.comments__regular");
+      const editBnt = getEditBtn();
 
-      if (!stopsWrapper || !statusEl || !fbEl || !commentWrapper) return;
+      if (!stopsWrapper || !statusEl || !fbEl || !commentWrapper || !editBnt) {
+        return;
+      }
 
       const status = statusEl.textContent.trim();
       const fbText = fbEl.textContent.trim();
@@ -442,7 +670,6 @@
       }
 
       // обробник на кнопку редагування
-      const editBnt = getEditBtn();
       if (editBnt) {
         editBnt.addEventListener(
           "click",
@@ -460,6 +687,9 @@
 
               // обробник кнопки save
               const saveBtn = getSaveBtn();
+              if (!saveBtn) {
+                return;
+              }
 
               saveBtn.addEventListener("click", () => {
                 const timesAfterUpdate = countTimes(timeInputs); //зберігаємо кількість заповнених полів часу при натисканні сейв
