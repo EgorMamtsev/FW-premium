@@ -828,24 +828,24 @@
 
   //#region Generage SMS
 
-  function createGenerateTxtBtn() {
+  function createGenerateTxtBtn(fbNum) {
     if (!FUTURES.generateSMS) {
       return;
     }
     const btnContainer = document.querySelector("lgt-button.m-l-4");
 
     const generateTxtBnt = createElem("button", "generate-txt-btn", "SMS");
- 
+
     btnContainer.append(generateTxtBnt);
 
     generateTxtBnt.addEventListener("click", () => {
-      generateTxtMessage(dispName);
+      generateTxtMessage(dispName, fbNum);
     });
   }
 
-  function generateTxtMessage(name) {
+  function generateTxtMessage(name, fbNum) {
     const cities = getStops();
-    const message = `Hello , this is ${name} with Landstar Dispatch.\nRegarding load ${cities[0]} -> ${cities[1]} — `;
+    const message = `Hello , this is ${name} with Landstar Dispatch.\nRegarding load ${cities[0]} -> ${cities[1]} FB# ${fbNum} — `;
     getComentField().value = message;
   }
 
@@ -940,7 +940,7 @@
       const fb = Number(fbText);
 
       if (!status || !fbText) return; //  чекаємо реальні текстові значення
-      createGenerateTxtBtn();
+      createGenerateTxtBtn(fb);
 
       //перевірка на статус для збереження коментаря
       if (status === "At Pickup" || status === "At Delivery") {
