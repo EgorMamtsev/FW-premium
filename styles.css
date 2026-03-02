@@ -21,10 +21,12 @@ td {
 /* лічильник апдейтів */
 .headline5 {
   display: flex;
+  align-items: center;
+  text-align: center;
 }
 .counterContainer {
   display: flex;
-  margin: 0 0 0 10px;
+  margin: 0 10px;
 }
 .loadsCounter {
   display: flex;
@@ -33,29 +35,23 @@ td {
 .updateCounter {
   display: flex;
 }
-.updateLabel {
-  margin: 0 0px 0 0;
-}
 .updateNumber {
   margin: 0 0 0 10px;
 }
 .clearBtn {
-  margin: 0 0 0 10px;
-  border-radius: 5px;
+  border-radius: 10px;
 }
 
 .updateCounter {
   display: flex;
 }
-.updateLabel {
-  margin: 0 0px 0 0;
-}
 .updateNumber {
   margin: 0 0 0 10px;
 }
-.clearBtn {
-  margin: 0 0 0 10px;
+button.clearBtn {
   border-radius: 5px;
+  font-size: 15px;
+  margin: 0 0 0 10px;
 }
 /*================================*/
 
@@ -125,3 +121,37 @@ div.d-flex.justify-content-between.m-b-2 {
   font-size: 20px;
 }
 /*================================*/
+
+/*=============filters============*/
+
+.filter-by-status__wrapper {
+  display: grid;
+  grid-template-rows: repeat(2, auto);
+  grid-auto-flow: column;
+
+  font-size: 15px;
+}
+
+.filter-container {
+  margin: 0 100px;
+  display: flex;
+  align-items: center;
+}
+
+button.clear-filters {
+  height: 30px;
+  border-radius: 5px;
+}
+/*================================*/
+
+/*=======genetate sms bnt======*/
+button.generate-txt-btn {
+  margin: 10px 0;
+  padding: 0;
+  height: 35px;
+  width: 35px;
+  border-radius: 50%;
+  font-size: 12px;
+  border: 0px;
+  background-color: #f2f2f8;
+}

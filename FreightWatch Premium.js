@@ -2,8 +2,8 @@
 // @name         Freight Watch Premium
 // @namespace    http://tampermonkey.net/
 // @version      2026-02-17
-// @description  Stable version: init, cleanup old FB, restore updated class, modular saveLoad
-// @author       You
+// @description  You will see
+// @author       GM
 // @match        https://erp.gologity.com/freight-watch/dispatch
 // @grant        none
 // ==/UserScript==
@@ -19,9 +19,37 @@
     updatesCounter: true,
     loadsCounter: true,
     hideSideBar: true,
+    filters: true,
+    generateSMS: true,
   };
 
-  // let cleaneDone = false;
+  const dispName = "George";
+
+  const filterParams = {
+    byStatus: [],
+    byClass: [],
+    byDate: [],
+  };
+
+  function createElem(tag, className, textContent) {
+    const el = document.createElement(tag);
+    if (className) el.classList.add(className);
+    if (textContent) el.textContent = textContent;
+    return el;
+  }
+
+  function createCheckBox(tag, className, type, filterParametr) {
+    const el = document.createElement(tag);
+    if (className) el.classList.add(className);
+    if (type) el.type = type;
+    if (filterParametr) {
+      el.addEventListener("change", () => {
+        addFilterParams(filterParametr[0], filterParametr[1], el.checked);
+      });
+    }
+
+    return el;
+  }
 
   //#endregion
 
@@ -50,6 +78,15 @@
     return document
       .querySelector("lgt-form-actions.fit")
       .querySelector("button.lgt-button-primary");
+  }
+
+  function getTodayDate() {
+    const todayCST = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Chicago",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+    return todayCST;
   }
 
   //#endregion
@@ -523,7 +560,7 @@
     counterContainer.append(loadsCounter);
 
     // Clear button
-    const clearBtn = createElem("button", "clearBtn", "clear");
+    const clearBtn = createElem("button", "clearBtn", "Clear");
     counterContainer.append(clearBtn);
     clearBtn.addEventListener("click", function () {
       updatedState.updates = 0;
@@ -547,12 +584,12 @@
   }
 
   //шаблон для створення елементів лічильника
-  function createElem(tag, className, textContent) {
-    const el = document.createElement(tag);
-    if (className) el.classList.add(className);
-    if (textContent) el.textContent = textContent;
-    return el;
-  }
+  // function createElem(tag, className, textContent) {
+  //   const el = document.createElement(tag);
+  //   if (className) el.classList.add(className);
+  //   if (textContent) el.textContent = textContent;
+  //   return el;
+  // }
 
   //#endregion
 
@@ -567,15 +604,278 @@
   }
   //#endregion
 
+  //#region Filters
+
+  function createFilters() {
+    if (!FUTURES.filters) {
+      return;
+    }
+
+    //батьківський контейнер
+    const elemBefore = document.querySelector(".headline5");
+    const filterCountainer = createElem("div", "filter-container");
+    elemBefore.append(filterCountainer);
+    // #region фільтр за статусом
+
+    // блок фільтрів за статусом
+    const filterByStatus = createElem("div", "filter-by-status__wrapper");
+    filterCountainer.append(filterByStatus);
+
+    const needToCheckWrapper = createElem("div", "need-to-check__wrapper");
+    const etaToPickWrapper = createElem("div", "eta-to-pick__wrapper");
+    const etaToDeliveryWrapper = createElem("div", "eta-to-delivery__wrapper");
+    const inTransitWrapper = createElem("div", "in-transit__wrapper");
+    const atPickWrapper = createElem("div", "at-pick__wrapper");
+    const atDeliveryWrapper = createElem("div", "at-del__wrapper");
+    const noAnswerWrapper = createElem("div", "no-answer__wrapper");
+    const todayDateWrapper = createElem("div", "today-date__wrapper");
+
+    const clearFilters = createElem("button", "clear-filters", "Default");
+    clearFilters.addEventListener("click", () => {
+      // очищаємо параметри фільтрів
+      Object.keys(filterParams).forEach((k) => (filterParams[k] = []));
+
+      // прибираємо галочки у всіх чекбоксів
+      const allCheckboxes = document.querySelectorAll(
+        ".filter-container input[type='checkbox']",
+      );
+      allCheckboxes.forEach((cb) => (cb.checked = false));
+
+      // застосовуємо фільтри (усі рядки показуються)
+      applyFilters(filterParams);
+    });
+    filterCountainer.append(clearFilters);
+
+    filterByStatus.append(
+      needToCheckWrapper,
+      inTransitWrapper,
+      etaToPickWrapper,
+      etaToDeliveryWrapper,
+      atPickWrapper,
+      atDeliveryWrapper,
+      noAnswerWrapper,
+      todayDateWrapper,
+    );
+
+    //need to check item
+    const needToCheckLabel = createElem(
+      "span",
+      "need-to-check__label",
+      "Need to check",
+    );
+    const needToCheckInput = createCheckBox(
+      "input",
+      "filter__input",
+      "checkbox",
+      ["byStatus", "Need to check"],
+    );
+
+    needToCheckWrapper.append(needToCheckLabel, needToCheckInput);
+
+    //eta to pick up item
+    const etaToPiclabel = createElem(
+      "span",
+      "eta-to-pick__label",
+      "ETA to pickup",
+    );
+    const etaToPicInput = createCheckBox("input", "filter__input", "checkbox", [
+      "byStatus",
+      "ETA Pickup",
+    ]);
+    etaToPickWrapper.append(etaToPiclabel, etaToPicInput);
+
+    //eta to del item
+    const etaToDeliverylabel = createElem(
+      "span",
+      "eta-to-delivery__label",
+      "ETA to delivery",
+    );
+    const etaToDeliveryInput = createCheckBox(
+      "input",
+      "filter__input",
+      "checkbox",
+      ["byStatus", "ETA Delivery"],
+    );
+    etaToDeliveryWrapper.append(etaToDeliverylabel, etaToDeliveryInput);
+
+    //in transit item
+    const inTransitLabel = createElem(
+      "span",
+      "in-transit__label",
+      "In transit",
+    );
+    const inTransitInput = createCheckBox(
+      "input",
+      "filter__input",
+      "checkbox",
+      ["byStatus", "In Transit/Loaded"],
+    );
+    inTransitWrapper.append(inTransitLabel, inTransitInput);
+
+    //at pick up item
+    const atPickLabel = createElem("span", "at-pick__label", "At pickup");
+    const atPickInput = createCheckBox("input", "filter__input", "checkbox", [
+      "byStatus",
+      "At Pickup",
+    ]);
+    atPickWrapper.append(atPickLabel, atPickInput);
+
+    //at del item
+    const atDeliveryLabel = createElem(
+      "span",
+      "at-delivery__label",
+      "At delivery",
+    );
+    const atDeliveryInput = createCheckBox(
+      "input",
+      "filter__input",
+      "checkbox",
+      ["byStatus", "At Delive"],
+    );
+    atDeliveryWrapper.append(atDeliveryLabel, atDeliveryInput);
+
+    // NA item
+    const noAnswerLabel = createElem("span", "no-answer__label", "N/A");
+    const noAnswerInput = createCheckBox("input", "filter__input", "checkbox", [
+      "byClass",
+      "red",
+    ]);
+    noAnswerWrapper.append(noAnswerLabel, noAnswerInput);
+
+    const todayLabel = createElem("span", "today-date__label", "Today");
+
+    const todayInput = createCheckBox(
+      "input",
+      "today-date__input",
+      "checkbox",
+      ["byDate", getTodayDate()],
+    );
+    todayDateWrapper.append(todayLabel, todayInput);
+
+    //#endregion
+  }
+
+  function applyFilters(params) {
+    if (!FUTURES.filters) {
+      return;
+    }
+    const rows = document.querySelectorAll("tbody tr");
+
+    rows.forEach((tr) => {
+      let show = true;
+
+      // ===== Фільтр по статусу =====
+      if (params.byStatus.length > 0) {
+        let statusText = tr.children[6]?.textContent.trim();
+
+        // обрізаємо тільки для At Pickup / At Delivery
+        if (statusText.startsWith("At Pickup")) {
+          statusText = statusText.slice(0, 9); // "At Pickup"
+        } else if (statusText.startsWith("At Delivery")) {
+          statusText = statusText.slice(0, 9); // "At Delive"
+        }
+
+        if (!params.byStatus.includes(statusText)) {
+          show = false;
+        }
+      }
+
+      // ===== Фільтр по класу =====
+      if (show && params.byClass.length > 0) {
+        const rowClasses = Array.from(tr.classList);
+        const matchesClass = params.byClass.some((cls) =>
+          rowClasses.includes(cls),
+        );
+        if (!matchesClass) {
+          show = false;
+        }
+      }
+
+      //фільтр по даті
+      if (params.byDate.length > 0) {
+        let pickDate = tr.children[9]?.textContent.slice(0, 5).trim();
+        let delDate = tr.children[12]?.textContent.slice(0, 5).trim();
+
+        const matchesDate =
+          params.byDate.includes(pickDate) || params.byDate.includes(delDate);
+
+        if (!matchesDate) {
+          show = false;
+        }
+      }
+
+      // ===== Показати або сховати рядок =====
+      tr.style.display = show ? "" : "none";
+    });
+  }
+
+  function addFilterParams(filterType, query, checked) {
+    if (!FUTURES.filters) {
+      return;
+    }
+    const arr = filterParams[filterType];
+    if (checked) {
+      if (!arr.includes(query)) arr.push(query);
+    } else {
+      const index = arr.indexOf(query);
+      if (index > -1) arr.splice(index, 1);
+    }
+
+    applyFilters(filterParams);
+  }
+
+  //#endregion
+
+  //#region Generage SMS
+
+  function createGenerateTxtBtn() {
+    if (!FUTURES.generateSMS) {
+      return;
+    }
+    const btnContainer = document.querySelector("lgt-button.m-l-4");
+
+    const generateTxtBnt = createElem("button", "generate-txt-btn", "SMS");
+ 
+    btnContainer.append(generateTxtBnt);
+
+    generateTxtBnt.addEventListener("click", () => {
+      generateTxtMessage(dispName);
+    });
+  }
+
+  function generateTxtMessage(name) {
+    const cities = getStops();
+    const message = `Hello , this is ${name} with Landstar Dispatch.\nRegarding load ${cities[0]} -> ${cities[1]} — `;
+    getComentField().value = message;
+  }
+
+  function getStops() {
+    // знаходимо всі stop-destination
+    const stops = document.querySelectorAll(".stop-destination");
+
+    // перевіряємо, що є елементи
+    if (stops.length > 0) {
+      const firstCity = stops[0].textContent.trim(); // перший
+      const lastCity = stops[stops.length - 1].textContent.trim(); // останній
+
+      return [firstCity, lastCity];
+    }
+  }
+
+  //#endregion
+
   //#region Observers
 
   //обсервер вимикається при завантаженні таблиці ОБОВ'ЯЗКОВО ВИМИКАТИ ДО ІНШИХ ФУНКЦІЙ
   //для функцій які мають спрацювати лише раз
+
   const pageLoadingObserver = new MutationObserver(() => {
-    if (getTbody() && getTbody().children.length > 0) {
+    if (getTbody() && getTbody().children.length > 30) {
       pageLoadingObserver.disconnect(); // вимикаєм до виклику функці
 
       createUpdatesCounter(); // створюємо лічильник апдейтів
+      createFilters();
+
       hideSideBar(); // hide sidebar
 
       //очищення локала. видаляє фб та коменти
@@ -603,19 +903,15 @@
 
   // Observer на таблицю (перерендери), чекає завантаження таблиці та ПРАЦЮЄ ЗАВЖДИ
   const highlightObserver = new MutationObserver(() => {
-    if (getTbody() && getTbody().children.length > 0) {
+    if (getTbody() && getTbody().children.length > 30) {
       restoreUpdatedRows(initUpdated()); //маркує вантажі
-
-      //очищення локала. видаляє фб та коменти
-      // if (!cleaneDone) {
-      //   removerMissingLoads();
-      //   cleanupComments();
-      //   cleaneDone = true;
-      // }
     }
   });
 
-  highlightObserver.observe(document.body, { childList: true, subtree: true });
+  highlightObserver.observe(document.body, {
+    childList: true,
+    subtree: true,
+  });
   //#endregion
 
   // Обробка кліку на рядок
@@ -644,6 +940,7 @@
       const fb = Number(fbText);
 
       if (!status || !fbText) return; //  чекаємо реальні текстові значення
+      createGenerateTxtBtn();
 
       //перевірка на статус для збереження коментаря
       if (status === "At Pickup" || status === "At Delivery") {
