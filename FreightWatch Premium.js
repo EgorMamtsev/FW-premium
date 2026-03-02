@@ -1006,19 +1006,29 @@
               }
 
               saveBtn.addEventListener("click", () => {
-                const timesAfterUpdate = countTimes(timeInputs); //зберігаємо кількість заповнених полів часу при натисканні сейв
+                const timesAfterUpdate = countTimes(timeInputs);
+
+                // Якщо поля не змінились
                 if (onFirstOpenTimes.length === timesAfterUpdate.length) {
-                  //порівнюємо масиви з часом до і після. отримуємо апдейт або лоад
                   increaseUpdate();
                   return;
                 }
 
+                // Поля змінились
                 increaseUpdate();
-                increaseLoad();
-                saveLoad(fb);
-                return;
-              });
 
+                const isInLocal = updatedState.updated.includes(fb);
+
+                // increaseLoad має спрацювати, якщо вантаж ще не врахований
+                if (!isInLocal) {
+                  increaseLoad();
+                }
+
+                // saveLoad робимо лише якщо markUpdates = true
+                if (!isInLocal && FUTURES.markUpdates) {
+                  saveLoad(fb);
+                }
+              });
               timesObserver.disconnect();
             });
             timesObserver.observe(document.body, {
