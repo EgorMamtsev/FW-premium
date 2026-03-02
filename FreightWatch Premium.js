@@ -280,8 +280,8 @@
     } else {
       const commentBody = commentsBox.querySelector(".body1");
       comment = commentBody.textContent;
-      if (comment.length > 25) {
-        comment = `${comment.slice(0, 25)}...`;
+      if (comment.length > 50) {
+        comment = `${comment.slice(0, 50)}...`;
       }
       return comment;
     }
@@ -290,6 +290,7 @@
   // знаходить час коментаря
   function findCommentTime() {
     const commentTimeBox = document
+      .querySelector("div.comments__regular")
       .querySelector("div.comment-container")
       .querySelector("span.date");
 
@@ -830,6 +831,10 @@
 
   function createGenerateTxtBtn(fbNum) {
     if (!FUTURES.generateSMS) {
+      return;
+    }
+
+    if (document.querySelector("button.generate-txt-btn ")) {
       return;
     }
     const btnContainer = document.querySelector("lgt-button.m-l-4");
