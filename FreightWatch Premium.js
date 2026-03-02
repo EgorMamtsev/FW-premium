@@ -89,6 +89,10 @@
     return todayCST;
   }
 
+  function getSMSbntContainer() {
+    return document.querySelector("lgt-button.m-l-4");
+  }
+
   //#endregion
 
   //#region Mark and Count updates
@@ -837,7 +841,7 @@
     if (document.querySelector("button.generate-txt-btn ")) {
       return;
     }
-    const btnContainer = document.querySelector("lgt-button.m-l-4");
+    const btnContainer = getSMSbntContainer();
 
     const generateTxtBnt = createElem("button", "generate-txt-btn", "SMS");
 
@@ -908,7 +912,7 @@
 
   // Observer на таблицю (перерендери), чекає завантаження таблиці та ПРАЦЮЄ ЗАВЖДИ
   const highlightObserver = new MutationObserver(() => {
-    if (getTbody() && getTbody().children.length > 30) {
+    if (getTbody() && getTbody().children.length > 0) {
       restoreUpdatedRows(initUpdated()); //маркує вантажі
     }
   });
@@ -935,8 +939,16 @@
         .querySelector("div.dispatch-comments")
         .querySelector("div.comments__regular");
       const editBnt = getEditBtn();
+      const smsBtnContainer = getSMSbntContainer();
 
-      if (!stopsWrapper || !statusEl || !fbEl || !commentWrapper || !editBnt) {
+      if (
+        !stopsWrapper ||
+        !statusEl ||
+        !fbEl ||
+        !commentWrapper ||
+        !editBnt ||
+        !smsBtnContainer
+      ) {
         return;
       }
 
