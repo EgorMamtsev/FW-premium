@@ -1008,26 +1008,16 @@
               saveBtn.addEventListener("click", () => {
                 const timesAfterUpdate = countTimes(timeInputs);
 
-                // Якщо поля не змінились
-                if (onFirstOpenTimes.length === timesAfterUpdate.length) {
+                if (onFirstOpenTimes.length !== timesAfterUpdate.length) {
                   increaseUpdate();
+                  if (!updatedState.updated.includes(fb)) {
+                    increaseLoad();
+                    saveLoad(fb);
+                  }
                   return;
                 }
 
-                // Поля змінились
                 increaseUpdate();
-
-                const isInLocal = updatedState.updated.includes(fb);
-
-                // increaseLoad має спрацювати, якщо вантаж ще не врахований
-                if (!isInLocal) {
-                  increaseLoad();
-                }
-
-                // saveLoad робимо лише якщо markUpdates = true
-                if (!isInLocal && FUTURES.markUpdates) {
-                  saveLoad(fb);
-                }
               });
               timesObserver.disconnect();
             });
