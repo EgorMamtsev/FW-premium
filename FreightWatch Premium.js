@@ -1008,13 +1008,12 @@
               saveBtn.addEventListener("click", () => {
                 const timesAfterUpdate = countTimes(timeInputs);
 
-                if (onFirstOpenTimes.length !== timesAfterUpdate.length) {
-                  increaseUpdate();
-                  if (!updatedState.updated.includes(fb)) {
-                    increaseLoad();
-                    saveLoad(fb);
-                  }
-                  return;
+                if (
+                  onFirstOpenTimes.length !== timesAfterUpdate.length &&
+                  !updatedState.updated.includes(fb)
+                ) {
+                  increaseLoad();
+                  saveLoad(fb);
                 }
 
                 increaseUpdate();
