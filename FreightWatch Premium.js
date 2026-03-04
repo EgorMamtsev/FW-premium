@@ -19,7 +19,7 @@
     updatesCounter: true,
     loadsCounter: true,
     hideSideBar: true,
-    filters: true,
+    filters: false,
     generateSMS: true,
   };
 
@@ -937,75 +937,73 @@
       const fbEl = document.querySelector(".m-r-1");
       const commentWrapper = document
         .querySelector("div.dispatch-comments")
-        .querySelector("div.comments__regular");
+        ?.querySelector("div.comments__regular");
       const editBnt = getEditBtn();
       const smsBtnContainer = getSMSbntContainer();
+      const commentField = getComentField();
 
+      // чекаємо всі потрібні елементи
       if (
         !stopsWrapper ||
         !statusEl ||
         !fbEl ||
         !commentWrapper ||
         !editBnt ||
-        !smsBtnContainer
+        !smsBtnContainer ||
+        !commentField
       ) {
         return;
       }
 
       const status = statusEl.textContent.trim();
-      const fbText = fbEl.textContent.trim();
-      const fb = Number(fbText);
+      const fb = Number(fbEl.textContent.trim());
 
-      if (!status || !fbText) return; //  чекаємо реальні текстові значення
+      // створюємо кнопку SMS
       createGenerateTxtBtn(fb);
 
-      //перевірка на статус для збереження коментаря
+      // --- Comment поле ---
       if (status === "At Pickup" || status === "At Delivery") {
         generateComment(fb, status, commentWrapper);
 
-        //клік на поле коментаря
-        getComentField().addEventListener("click", () => {
-          const postBnt = getPostComentBtn();
-          //клік на кнопку post
-          postBnt.addEventListener("click", () => {
-            const date = new Date();
+        commentField.addEventListener("click", () => {
+          const postBtn = getPostComentBtn();
+          if (!postBtn) return;
 
-            //зберігажмо коментар який написали
+          function handlePostClick() {
+            const date = new Date();
             saveComment({
               fb: fb,
               status: status,
-              comment: getComentField().value, //викликаємо з тим що написано
-              commentTime: `${date.getHours()}:${date.getMinutes()}`, // отримуємо наявний час
+              comment: commentField.value,
+              commentTime: `${date.getHours()}:${date.getMinutes()}`,
               timeZone: findTimeZone(),
               inTime: findInTime(),
             });
-          });
+          }
+
+          // Remove + add listener
+          postBtn.removeEventListener("click", handlePostClick);
+          postBtn.addEventListener("click", handlePostClick);
         });
       }
 
-      // обробник на кнопку редагування
+      // --- Edit + Save поле ---
       if (editBnt) {
         editBnt.addEventListener(
           "click",
           () => {
-            const timesObserver = new MutationObserver((mutations, obs) => {
+            const timesObserver = new MutationObserver(() => {
               const timesWrapper = document.querySelector("div.m-y-5");
+              if (!timesWrapper) return;
 
-              if (!timesWrapper) {
-                return;
-              }
               const timeInputs = timesWrapper.querySelectorAll(
                 "input.mat-mdc-input-element",
               );
-              const onFirstOpenTimes = countTimes(timeInputs); // зберігаємо кількість заповнених полів часу
-
-              // обробник кнопки save
+              const onFirstOpenTimes = countTimes(timeInputs);
               const saveBtn = getSaveBtn();
-              if (!saveBtn) {
-                return;
-              }
+              if (!saveBtn) return;
 
-              saveBtn.addEventListener("click", () => {
+              function handleSaveClick() {
                 const timesAfterUpdate = countTimes(timeInputs);
 
                 if (
@@ -1017,9 +1015,14 @@
                 }
 
                 increaseUpdate();
-              });
+              }
+
+              saveBtn.removeEventListener("click", handleSaveClick);
+              saveBtn.addEventListener("click", handleSaveClick);
+
               timesObserver.disconnect();
             });
+
             timesObserver.observe(document.body, {
               childList: true,
               subtree: true,
@@ -1029,7 +1032,7 @@
         );
       }
 
-      // після того як дані з модалки доступні — вимикаємо observer
+      // observer можна вимкнути, бо все налаштовано
       modalObserver.disconnect();
     });
 
