@@ -1046,12 +1046,16 @@
       const editBnt = getEditBtn();
       const smsBtnContainer = getSMSbntContainer();
       const commentField = getComentField();
+      const fb = Number(fbEl.textContent.trim());
+      const status = statusEl.textContent.trim();
 
       // чекаємо всі потрібні елементи
       if (
         !stopsWrapper ||
         !statusEl ||
         !fbEl ||
+        !fb ||
+        !status ||
         !commentWrapper ||
         !editBnt ||
         !smsBtnContainer ||
@@ -1059,9 +1063,6 @@
       ) {
         return;
       }
-
-      const status = statusEl.textContent.trim();
-      const fb = Number(fbEl.textContent.trim());
 
       console.log("=== ПОЧАТОК ОБРОБКИ ===");
       console.log("FB отриманий:", fb);
