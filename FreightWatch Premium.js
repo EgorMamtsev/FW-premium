@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Freight Watch Premium
 // @namespace    http://tampermonkey.net/
-// @version      2026-02-17
+// @version      2026-02-20
 // @description  You will see
 // @author       GM
 // @match        https://erp.gologity.com/freight-watch/dispatch
@@ -63,21 +63,39 @@
   }
 
   function getEditBtn() {
-    return document
-      .querySelector("div.stops-wrapper")
-      .querySelector("button.lgt-button-white");
+    try {
+      const stopsWrapper = document.querySelector("div.stops-wrapper");
+      if (!stopsWrapper) return null;
+
+      return stopsWrapper.querySelector("button.lgt-button-white");
+    } catch (error) {
+      console.error("❌ Помилка в getEditBtn:", error);
+      return null;
+    }
   }
 
   function getComentField() {
-    return document
-      .querySelector("div.post-comment")
-      .querySelector("textarea.cdk-textarea-autosize");
+    try {
+      const postComment = document.querySelector("div.post-comment");
+      if (!postComment) return null;
+
+      return postComment.querySelector("textarea.cdk-textarea-autosize");
+    } catch (error) {
+      console.error("❌ Помилка в getComentField:", error);
+      return null;
+    }
   }
 
   function getPostComentBtn() {
-    return document
-      .querySelector("lgt-form-actions.fit")
-      .querySelector("button.lgt-button-primary");
+    try {
+      const formActions = document.querySelector("lgt-form-actions.fit");
+      if (!formActions) return null;
+
+      return formActions.querySelector("button.lgt-button-primary");
+    } catch (error) {
+      console.error("❌ Помилка в getPostComentBtn:", error);
+      return null;
+    }
   }
 
   function getTodayDate() {
@@ -97,21 +115,58 @@
 
   //#region Mark and Count updates
 
+  // ====== STORAGE QUEUE SYSTEM ======
+  const StorageQueue = (() => {
+    const queue = [];
+    let isProcessing = false;
+
+    const process = async () => {
+      if (isProcessing || queue.length === 0) return;
+      isProcessing = true;
+
+      while (queue.length > 0) {
+        const { key, value, resolve } = queue.shift();
+        try {
+          localStorage.setItem(key, value);
+          console.log(`✅ Saved to localStorage: ${key}`);
+          resolve(true);
+        } catch (error) {
+          console.error(`❌ Failed to save ${key}:`, error);
+          resolve(false);
+        }
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      isProcessing = false;
+    };
+
+    return {
+      enqueue: (key, value) => {
+        return new Promise((resolve) => {
+          queue.push({ key, value, resolve });
+          process();
+        });
+      },
+      read: (key, defaultValue) => {
+        try {
+          const value = localStorage.getItem(key);
+          return value ? JSON.parse(value) : defaultValue;
+        } catch (error) {
+          console.error(`❌ Failed to read ${key}:`, error);
+          return defaultValue;
+        }
+      },
+    };
+  })();
+
   // Ініціалізація локалсторедж
   function initUpdated() {
-    let updatedLoads = localStorage.getItem("updated");
-
-    if (!updatedLoads) {
-      updatedLoads = { updates: 0, loads: 0, updated: [] };
-      localStorage.setItem("updated", JSON.stringify(updatedLoads));
-    } else {
-      updatedLoads = JSON.parse(updatedLoads);
-    }
-
-    return updatedLoads;
+    return StorageQueue.read("updated", {
+      updates: 0,
+      loads: 0,
+      updated: [],
+    });
   }
 
-  // Викликаємо завжди, навіть якщо countUpdates=false або markUpdates=false
   let updatedState = initUpdated();
 
   // Функція для підсвітки рядків
@@ -137,14 +192,13 @@
     });
   }
 
-  //видаляє фб яких вже не має на сторінці
+  //видаляє фб яких вже не має на сторінц��
   function removerMissingLoads() {
     const tbody = getTbody();
     if (!tbody) return;
 
     const rows = Array.from(tbody.children);
 
-    // FB які є зараз на сторінці
     const fbOnPage = rows.map((row) =>
       Number(row.children[1].textContent.trim()),
     );
@@ -153,50 +207,85 @@
 
     const before = updatedState.updated.length;
 
-    // залишаємо тільки ті FB, які ще є на сторінці
     updatedState.updated = updatedState.updated.filter((fb) =>
       fbOnPage.includes(Number(fb)),
     );
 
     if (before !== updatedState.updated.length) {
-      localStorage.setItem("updated", JSON.stringify(updatedState));
+      StorageQueue.enqueue("updated", JSON.stringify(updatedState));
     }
   }
 
-  // Функція додавання FB у локалсторедж
-  function saveLoad(fb) {
+  // Функція додавання FB у локалсторедж - ВИПРАВЛЕНА
+  async function increaseLoad() {
+    if (!FUTURES.countUpdates) {
+      console.warn("⚠️ countUpdates disabled");
+      return false;
+    }
+
+    try {
+      updatedState = initUpdated();
+      updatedState.loads = (updatedState.loads || 0) + 1;
+      console.log(`📈 Loads: ${updatedState.loads}`);
+
+      // ⭐ ЧЕКАЄМО збереження
+      await StorageQueue.enqueue("updated", JSON.stringify(updatedState));
+
+      showStats();
+      return true;
+    } catch (error) {
+      console.error("❌ Помилка в increaseLoad:", error);
+      return false;
+    }
+  }
+
+  async function increaseUpdate() {
+    if (!FUTURES.countUpdates) {
+      console.warn("⚠️ countUpdates disabled");
+      return false;
+    }
+
+    try {
+      updatedState = initUpdated();
+      updatedState.updates = (updatedState.updates || 0) + 1;
+      console.log(`📊 Updates: ${updatedState.updates}`);
+
+      // ⭐ ЧЕКАЄМО збереження
+      await StorageQueue.enqueue("updated", JSON.stringify(updatedState));
+
+      showStats();
+      return true;
+    } catch (error) {
+      console.error("❌ Помилка в increaseUpdate:", error);
+      return false;
+    }
+  }
+
+  async function saveLoad(fb) {
     if (!FUTURES.markUpdates) {
-      return;
+      console.warn("⚠️ markUpdates disabled");
+      return false;
     }
-    updatedState = initUpdated();
 
-    if (!updatedState.updated.includes(fb)) {
-      updatedState.updated.push(fb);
-      localStorage.setItem("updated", JSON.stringify(updatedState));
+    try {
+      updatedState = initUpdated();
+
+      if (!updatedState.updated.includes(fb)) {
+        updatedState.updated.push(fb);
+        console.log(`📝 Додаємо FB ${fb} до updated`);
+
+        // ⭐ ЧЕКАЄМО збереження
+        await StorageQueue.enqueue("updated", JSON.stringify(updatedState));
+
+        return true;
+      }
+
+      console.log(`⚠️ FB ${fb} вже є в updated`);
+      return false;
+    } catch (error) {
+      console.error("❌ Помилка в saveLoad:", error);
+      return false;
     }
-  }
-  // додає +1 до loads, підрахунок вантажів
-  function increaseLoad() {
-    if (!FUTURES.countUpdates) {
-      return;
-    }
-    updatedState = initUpdated();
-    updatedState.loads += 1;
-    localStorage.setItem("updated", JSON.stringify(updatedState));
-
-    showStats(); // оновлення лічильника апдейтів createUpdatesCounter
-  }
-  // додає +1 до updates, підрахунок апдейтів
-
-  function increaseUpdate() {
-    if (!FUTURES.countUpdates) {
-      return;
-    }
-    updatedState = initUpdated();
-    updatedState.updates += 1;
-    localStorage.setItem("updated", JSON.stringify(updatedState));
-
-    showStats(); // оновлення лічильника апдейтів createUpdatesCounter
   }
 
   // рахує кількість заповнених інпутів часу для порівняння і розуміння +loads або +updates
@@ -217,156 +306,219 @@
 
   //отримуємо коментарі з локала
   function initComments() {
-    let comments = localStorage.getItem("comments");
-
-    if (!comments) {
-      comments = [];
-      localStorage.setItem("comments", JSON.stringify(comments));
-    } else {
-      comments = JSON.parse(comments);
-    }
-
-    return comments;
+    return StorageQueue.read("comments", []);
   }
 
-  // Викликаємо завжди, навіть якщо comments=false
   let commentsState = initComments();
 
-  // зберігає коментар у локал
+  // зберігає коментар у локал - ВИПРАВЛЕНА
   function saveComment(data) {
     if (!FUTURES.comments) {
-      return;
-    }
-    commentsState = initComments();
-
-    const index = commentsState.findIndex(
-      (c) => Number(c.fb) === Number(data.fb),
-    );
-
-    if (index !== -1) {
-      commentsState[index] = data;
-    } else {
-      commentsState.push(data);
+      console.warn("⚠️ Comments disabled in FUTURES");
+      return false;
     }
 
-    localStorage.setItem("comments", JSON.stringify(commentsState));
+    if (!data || typeof data.fb === "undefined") {
+      console.error("❌ Invalid comment data:", data);
+      return false;
+    }
+
+    try {
+      commentsState = initComments();
+
+      if (!Array.isArray(commentsState)) {
+        console.error("❌ Comments state is not an array, resetting");
+        commentsState = [];
+      }
+
+      const index = commentsState.findIndex(
+        (c) => Number(c.fb) === Number(data.fb),
+      );
+
+      if (index !== -1) {
+        console.log(`📝 Оновлення коментара для FB ${data.fb}`);
+        commentsState[index] = data;
+      } else {
+        console.log(`📝 Додавання нового коментара для FB ${data.fb}`);
+        commentsState.push(data);
+      }
+
+      StorageQueue.enqueue("comments", JSON.stringify(commentsState));
+      console.log("✅ Коментар успішно збережений");
+      return true;
+    } catch (error) {
+      console.error("❌ Error in saveComment:", error);
+      return false;
+    }
   }
-  // збирає обʼєкт коментаря який буде збережено
+
+  // збирає обʼєкт коментаря який буде збережено - ВИПРАВЛЕНА
   function generateComment(fb, status, commentBox) {
     if (!FUTURES.comments) {
       return;
     }
-    let willBeSaved = {};
-    if (commentBox.children.length === 0) {
-      willBeSaved = {
+
+    try {
+      let willBeSaved = {
         fb: fb,
+        status: status,
         comment: "no comments",
-        status: status,
+        timestamp: new Date().toISOString(),
       };
-    } else {
-      willBeSaved = {
-        fb: fb,
-        status: status,
-        comment: findComment(),
-        commentTime: findCommentTime(),
-        timeZone: findTimeZone(),
-        inTime: findInTime(),
-      };
-    }
-    saveComment(willBeSaved);
-  }
-  // знаходить текст коментаря
-  function findComment() {
-    let commentsBox = document.querySelector("div.comments__regular");
-    let comment;
-    if (commentsBox.children.length === 0) {
-      return (comment = "no comments yet");
-    } else {
-      const commentBody = commentsBox.querySelector(".body1");
-      comment = commentBody.textContent;
-      if (comment.length > 50) {
-        comment = `${comment.slice(0, 50)}...`;
+
+      if (commentBox && commentBox.children && commentBox.children.length > 0) {
+        try {
+          const comment = findComment() || "no comments yet";
+          const commentTime = findCommentTime ? findCommentTime() : null;
+          const timeZone = findTimeZone ? findTimeZone() : null;
+          const inTime = findInTime ? findInTime() : null;
+
+          willBeSaved = {
+            ...willBeSaved,
+            comment: comment,
+            commentTime: commentTime,
+            timeZone: timeZone,
+            inTime: inTime,
+          };
+        } catch (error) {
+          console.error("❌ Error reading comment data:", error);
+        }
       }
-      return comment;
+
+      saveComment(willBeSaved);
+    } catch (error) {
+      console.error("❌ Error in generateComment:", error);
     }
   }
 
-  // знаходить час коментаря
+  // знаходить текст коментаря - ВИПРАВЛЕНА
+  // знаходить текст коментаря - ВИПРАВЛЕНА
+  function findComment() {
+    try {
+      let commentsBox = document.querySelector("div.comments__regular");
+      if (!commentsBox) return "no comments yet";
+
+      if (commentsBox.children.length === 0) {
+        return "no comments yet";
+      } else {
+        const commentBody = commentsBox.querySelector(".body1");
+        if (!commentBody) return "no comments yet";
+
+        let comment = commentBody.textContent;
+        if (comment.length > 50) {
+          comment = `${comment.slice(0, 50)}...`;
+        }
+        return comment;
+      }
+    } catch (error) {
+      console.error("❌ Error in findComment:", error);
+      return "no comments yet";
+    }
+  }
+
+  // знаходить час коментаря - ВИПРАВЛЕНА
   function findCommentTime() {
-    const commentTimeBox = document
-      .querySelector("div.comments__regular")
-      .querySelector("div.comment-container")
-      .querySelector("span.date");
+    try {
+      const commentTimeBox = document.querySelector("div.comments__regular");
+      if (!commentTimeBox) return null;
 
-    const commentTime = `${commentTimeBox.textContent.at(
-      -8,
-    )}${commentTimeBox.textContent.at(-7)}${commentTimeBox.textContent.at(
-      -6,
-    )}${commentTimeBox.textContent.at(-5)}${commentTimeBox.textContent.at(
-      -4,
-    )}${commentTimeBox.textContent.at(-3)}${commentTimeBox.textContent.at(
-      -2,
-    )}${commentTimeBox.textContent.at(-1)}`;
+      const commentContainer = commentTimeBox.querySelector(
+        "div.comment-container",
+      );
+      if (!commentContainer) return null;
 
-    return commentTime;
-  }
+      const dateSpan = commentContainer.querySelector("span.date");
+      if (!dateSpan) return null;
 
-  //знаходить inTime
-  function findInTime() {
-    let findStops = document.querySelectorAll("div.stop-item");
-    let pickUpDateItem = findStops[0].querySelectorAll("p.date");
-    let delDateItem =
-      findStops[findStops.length - 1].querySelectorAll("p.date");
-
-    if (pickUpDateItem[2].textContent == "") {
-      let inTime = `${pickUpDateItem[1].textContent.at(
-        -5,
-      )}${pickUpDateItem[1].textContent.at(
+      const commentTime = `${dateSpan.textContent.at(
+        -8,
+      )}${dateSpan.textContent.at(-7)}${dateSpan.textContent.at(
+        -6,
+      )}${dateSpan.textContent.at(-5)}${dateSpan.textContent.at(
         -4,
-      )}${pickUpDateItem[1].textContent.at(
-        -3,
-      )}${pickUpDateItem[1].textContent.at(
+      )}${dateSpan.textContent.at(-3)}${dateSpan.textContent.at(
         -2,
-      )}${pickUpDateItem[1].textContent.at(-1)}`;
+      )}${dateSpan.textContent.at(-1)}`;
 
-      return inTime;
-    } else {
-      let inTime = `${delDateItem[1].textContent.at(
-        -5,
-      )}${delDateItem[1].textContent.at(-4)}${delDateItem[1].textContent.at(
-        -3,
-      )}${delDateItem[1].textContent.at(-2)}${delDateItem[1].textContent.at(
-        -1,
-      )}`;
-
-      return inTime;
+      return commentTime;
+    } catch (error) {
+      console.error("❌ Error in findCommentTime:", error);
+      return null;
     }
   }
 
-  //знаходить часовий пояс
-  function findTimeZone() {
-    let findStops = document.querySelectorAll("div.stop-item");
-    let pickUpDateItem = findStops[0].querySelectorAll("p.date");
-    let findTimeZoneBox = document.querySelectorAll("p.m-b-1");
+  //знаходить inTime - ВИПРАВЛЕНА
+  function findInTime() {
+    try {
+      let findStops = document.querySelectorAll("div.stop-item");
+      if (!findStops || findStops.length === 0) return null;
 
-    if (!pickUpDateItem || !findStops || !findTimeZoneBox) {
-      return;
+      let pickUpDateItem = findStops[0].querySelectorAll("p.date");
+      let delDateItem =
+        findStops[findStops.length - 1].querySelectorAll("p.date");
+
+      if (!pickUpDateItem || !delDateItem) return null;
+
+      if (pickUpDateItem[2] && pickUpDateItem[2].textContent == "") {
+        let inTime = `${pickUpDateItem[1].textContent.at(
+          -5,
+        )}${pickUpDateItem[1].textContent.at(
+          -4,
+        )}${pickUpDateItem[1].textContent.at(
+          -3,
+        )}${pickUpDateItem[1].textContent.at(
+          -2,
+        )}${pickUpDateItem[1].textContent.at(-1)}`;
+
+        return inTime;
+      } else if (delDateItem[1]) {
+        let inTime = `${delDateItem[1].textContent.at(
+          -5,
+        )}${delDateItem[1].textContent.at(-4)}${delDateItem[1].textContent.at(
+          -3,
+        )}${delDateItem[1].textContent.at(-2)}${delDateItem[1].textContent.at(
+          -1,
+        )}`;
+
+        return inTime;
+      }
+      return null;
+    } catch (error) {
+      console.error("❌ Error in findInTime:", error);
+      return null;
     }
+  }
 
-    if (pickUpDateItem[2].textContent == "") {
-      let timeZone = `${findTimeZoneBox[0].textContent.at(
-        -3,
-      )}${findTimeZoneBox[0].textContent.at(
-        -2,
-      )}${findTimeZoneBox[0].textContent.at(-1)}`;
-      return timeZone;
-    } else {
-      let timeZone = `${findTimeZoneBox[1].textContent.at(
-        -3,
-      )}${findTimeZoneBox[1].textContent.at(
-        -2,
-      )}${findTimeZoneBox[1].textContent.at(-1)}`;
-      return timeZone;
+  //знаходить часовий пояс - ВИПРАВЛЕНА
+  function findTimeZone() {
+    try {
+      let findStops = document.querySelectorAll("div.stop-item");
+      let pickUpDateItem = findStops[0].querySelectorAll("p.date");
+      let findTimeZoneBox = document.querySelectorAll("p.m-b-1");
+
+      if (!pickUpDateItem || !findStops || !findTimeZoneBox) {
+        return null;
+      }
+
+      if (pickUpDateItem[2] && pickUpDateItem[2].textContent == "") {
+        let timeZone = `${findTimeZoneBox[0].textContent.at(
+          -3,
+        )}${findTimeZoneBox[0].textContent.at(
+          -2,
+        )}${findTimeZoneBox[0].textContent.at(-1)}`;
+        return timeZone;
+      } else if (findTimeZoneBox[1]) {
+        let timeZone = `${findTimeZoneBox[1].textContent.at(
+          -3,
+        )}${findTimeZoneBox[1].textContent.at(
+          -2,
+        )}${findTimeZoneBox[1].textContent.at(-1)}`;
+        return timeZone;
+      }
+      return null;
+    } catch (error) {
+      console.error("❌ Error in findTimeZone:", error);
+      return null;
     }
   }
 
@@ -402,6 +554,7 @@
     }, 500);
   }
   restoreComments();
+
   //видаляє коментрарі
   function cleanupComments() {
     commentsState = initComments();
@@ -410,20 +563,16 @@
 
     const rows = Array.from(tbody.children);
 
-    // Збираємо FB вантажів, які мають клас .orange
     const orangeFBs = rows
       .filter((r) => r.classList.contains("orange"))
       .map((r) => Number(r.children[1].textContent));
 
-    // Видаляємо з локала коментарі для вантажів, яких більше немає з .orange
     commentsState = commentsState.filter((c) =>
       orangeFBs.includes(Number(c.fb)),
     );
 
-    localStorage.setItem("comments", JSON.stringify(commentsState));
+    StorageQueue.enqueue("comments", JSON.stringify(commentsState));
   }
-
-  function postCommetn() {}
 
   //#endregion
 
@@ -465,15 +614,12 @@
 
   //функція шаблон для створення елементів лічильника
   function createCounterItem(mod, itemLabel) {
-    // загальний блок для лейбла і підрахунку
     const item = document.createElement("div");
     item.classList.add("loads-counter__item", `loads-counter__item--${mod}`);
 
-    // блок з підрахунком(числом)
     const numberOfLoads = document.createElement("div");
     numberOfLoads.classList.add("loads-counter__count");
 
-    //текст елементу
     const label = document.createElement("div");
     label.classList.add("loads-counter__label");
     label.textContent = itemLabel;
@@ -545,32 +691,28 @@
     if (!FUTURES.updatesCounter) {
       return;
     }
-    // батьківський контейнер
     const elemBeforeCounter = document.querySelector(".headline5");
     const counterContainer = createElem("div", "counterContainer");
     elemBeforeCounter.append(counterContainer);
 
-    // Updates блок
     const updateCounter = createElem("div", "updateCounter");
     const updateLabel = createElem("div", "updateLabel", "Updates");
     const numberOfUpdates = createElem("div", "updateNumber");
     updateCounter.append(updateLabel, numberOfUpdates);
     counterContainer.append(updateCounter);
 
-    // Loads блок
     const loadsCounter = createElem("div", "loadsCounter");
     const loadsLabel = createElem("div", "loadsLabel", "Loads");
     const numberOfLoads = createElem("div", "updateNumber");
     loadsCounter.append(loadsLabel, numberOfLoads);
     counterContainer.append(loadsCounter);
 
-    // Clear button
     const clearBtn = createElem("button", "clearBtn", "Clear");
     counterContainer.append(clearBtn);
     clearBtn.addEventListener("click", function () {
       updatedState.updates = 0;
       updatedState.loads = 0;
-      localStorage.setItem("updated", JSON.stringify(updatedState));
+      StorageQueue.enqueue("updated", JSON.stringify(updatedState));
       showStats();
     });
 
@@ -587,14 +729,6 @@
     document.querySelector(".loadsCounter .updateNumber").textContent =
       updatedState.loads;
   }
-
-  //шаблон для створення елементів лічильника
-  // function createElem(tag, className, textContent) {
-  //   const el = document.createElement(tag);
-  //   if (className) el.classList.add(className);
-  //   if (textContent) el.textContent = textContent;
-  //   return el;
-  // }
 
   //#endregion
 
@@ -616,13 +750,10 @@
       return;
     }
 
-    //батьківський контейнер
     const elemBefore = document.querySelector(".headline5");
     const filterCountainer = createElem("div", "filter-container");
     elemBefore.append(filterCountainer);
-    // #region фільтр за статусом
 
-    // блок фільтрів за статусом
     const filterByStatus = createElem("div", "filter-by-status__wrapper");
     filterCountainer.append(filterByStatus);
 
@@ -637,16 +768,13 @@
 
     const clearFilters = createElem("button", "clear-filters", "Default");
     clearFilters.addEventListener("click", () => {
-      // очищаємо параметри фільтрів
       Object.keys(filterParams).forEach((k) => (filterParams[k] = []));
 
-      // прибираємо галочки у всіх чекбоксів
       const allCheckboxes = document.querySelectorAll(
         ".filter-container input[type='checkbox']",
       );
       allCheckboxes.forEach((cb) => (cb.checked = false));
 
-      // застосовуємо фільтри (усі рядки показуються)
       applyFilters(filterParams);
     });
     filterCountainer.append(clearFilters);
@@ -662,7 +790,6 @@
       todayDateWrapper,
     );
 
-    //need to check item
     const needToCheckLabel = createElem(
       "span",
       "need-to-check__label",
@@ -677,7 +804,6 @@
 
     needToCheckWrapper.append(needToCheckLabel, needToCheckInput);
 
-    //eta to pick up item
     const etaToPiclabel = createElem(
       "span",
       "eta-to-pick__label",
@@ -689,7 +815,6 @@
     ]);
     etaToPickWrapper.append(etaToPiclabel, etaToPicInput);
 
-    //eta to del item
     const etaToDeliverylabel = createElem(
       "span",
       "eta-to-delivery__label",
@@ -703,7 +828,6 @@
     );
     etaToDeliveryWrapper.append(etaToDeliverylabel, etaToDeliveryInput);
 
-    //in transit item
     const inTransitLabel = createElem(
       "span",
       "in-transit__label",
@@ -717,7 +841,6 @@
     );
     inTransitWrapper.append(inTransitLabel, inTransitInput);
 
-    //at pick up item
     const atPickLabel = createElem("span", "at-pick__label", "At pickup");
     const atPickInput = createCheckBox("input", "filter__input", "checkbox", [
       "byStatus",
@@ -725,7 +848,6 @@
     ]);
     atPickWrapper.append(atPickLabel, atPickInput);
 
-    //at del item
     const atDeliveryLabel = createElem(
       "span",
       "at-delivery__label",
@@ -739,7 +861,6 @@
     );
     atDeliveryWrapper.append(atDeliveryLabel, atDeliveryInput);
 
-    // NA item
     const noAnswerLabel = createElem("span", "no-answer__label", "N/A");
     const noAnswerInput = createCheckBox("input", "filter__input", "checkbox", [
       "byClass",
@@ -756,8 +877,6 @@
       ["byDate", getTodayDate()],
     );
     todayDateWrapper.append(todayLabel, todayInput);
-
-    //#endregion
   }
 
   function applyFilters(params) {
@@ -769,15 +888,13 @@
     rows.forEach((tr) => {
       let show = true;
 
-      // ===== Фільтр по статусу =====
       if (params.byStatus.length > 0) {
         let statusText = tr.children[6]?.textContent.trim();
 
-        // обрізаємо тільки для At Pickup / At Delivery
         if (statusText.startsWith("At Pickup")) {
-          statusText = statusText.slice(0, 9); // "At Pickup"
+          statusText = statusText.slice(0, 9);
         } else if (statusText.startsWith("At Delivery")) {
-          statusText = statusText.slice(0, 9); // "At Delive"
+          statusText = statusText.slice(0, 9);
         }
 
         if (!params.byStatus.includes(statusText)) {
@@ -785,7 +902,6 @@
         }
       }
 
-      // ===== Фільтр по класу =====
       if (show && params.byClass.length > 0) {
         const rowClasses = Array.from(tr.classList);
         const matchesClass = params.byClass.some((cls) =>
@@ -796,7 +912,6 @@
         }
       }
 
-      //фільтр по даті
       if (params.byDate.length > 0) {
         let pickDate = tr.children[9]?.textContent.slice(0, 5).trim();
         let delDate = tr.children[12]?.textContent.slice(0, 5).trim();
@@ -809,7 +924,6 @@
         }
       }
 
-      // ===== Показати або сховати рядок =====
       tr.style.display = show ? "" : "none";
     });
   }
@@ -859,13 +973,11 @@
   }
 
   function getStops() {
-    // знаходимо всі stop-destination
     const stops = document.querySelectorAll(".stop-destination");
 
-    // перевіряємо, що є елементи
     if (stops.length > 0) {
-      const firstCity = stops[0].textContent.trim(); // перший
-      const lastCity = stops[stops.length - 1].textContent.trim(); // останній
+      const firstCity = stops[0].textContent.trim();
+      const lastCity = stops[stops.length - 1].textContent.trim();
 
       return [firstCity, lastCity];
     }
@@ -875,33 +987,27 @@
 
   //#region Observers
 
-  //обсервер вимикається при завантаженні таблиці ОБОВ'ЯЗКОВО ВИМИКАТИ ДО ІНШИХ ФУНКЦІЙ
-  //для функцій які мають спрацювати лише раз
-
   const pageLoadingObserver = new MutationObserver(() => {
     if (getTbody() && getTbody().children.length > 30) {
-      pageLoadingObserver.disconnect(); // вимикаєм до виклику функці
+      pageLoadingObserver.disconnect();
 
-      createUpdatesCounter(); // створюємо лічильник апдейтів
+      createUpdatesCounter();
       createFilters();
 
-      hideSideBar(); // hide sidebar
+      hideSideBar();
 
-      //очищення локала. видаляє фб та коменти
-      removerMissingLoads(); //видаляємо коментарі
-      cleanupComments(); //видалямо вантажі які зникли
+      removerMissingLoads();
+      cleanupComments();
 
-      //створюємо лічільник
       createLoadsCounter();
-      //обсервер на сторінку щоб бачити зміну кількості рядків
       const loadsCounterObserver = new MutationObserver(() => {
         startCount();
       });
       loadsCounterObserver.observe(getTbody(), {
-        childList: true, // додавання/видалення рядків
-        subtree: true, // зміни у вкладених елементах (наприклад, <td>)
-        attributes: true, // зміни атрибутів
-        attributeFilter: ["class"], // тільки якщо змінюється class
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["class"],
       });
     }
   });
@@ -910,10 +1016,9 @@
     subtree: true,
   });
 
-  // Observer на таблицю (перерендери), чекає завантаження таблиці та ПРАЦЮЄ ЗАВЖДИ
   const highlightObserver = new MutationObserver(() => {
     if (getTbody() && getTbody().children.length > 0) {
-      restoreUpdatedRows(initUpdated()); //маркує вантажі
+      restoreUpdatedRows(initUpdated());
     }
   });
 
@@ -934,7 +1039,7 @@
     const modalObserver = new MutationObserver((mutations, obs) => {
       const stopsWrapper = document.querySelector("div.stops-wrapper");
       const statusEl = document.querySelector("span.mat-mdc-select-min-line");
-      const fbEl = document.querySelector(".m-r-1");
+      const fbEl = document.querySelector(".m-r-1 a");
       const commentWrapper = document
         .querySelector("div.dispatch-comments")
         ?.querySelector("div.comments__regular");
@@ -958,6 +1063,12 @@
       const status = statusEl.textContent.trim();
       const fb = Number(fbEl.textContent.trim());
 
+      console.log("=== ПОЧАТОК ОБРОБКИ ===");
+      console.log("FB отриманий:", fb);
+      console.log("Тип FB:", typeof fb);
+      console.log("FB === 0?", fb === 0);
+      console.log("isNaN(fb)?", isNaN(fb));
+
       // створюємо кнопку SMS
       createGenerateTxtBtn(fb);
 
@@ -965,26 +1076,41 @@
       if (status === "At Pickup" || status === "At Delivery") {
         generateComment(fb, status, commentWrapper);
 
-        commentField.addEventListener("click", () => {
-          const postBtn = getPostComentBtn();
-          if (!postBtn) return;
+        commentField.addEventListener(
+          "click",
+          () => {
+            const postBtn = getPostComentBtn();
+            if (!postBtn) return;
 
-          function handlePostClick() {
-            const date = new Date();
-            saveComment({
-              fb: fb,
-              status: status,
-              comment: commentField.value,
-              commentTime: `${date.getHours()}:${date.getMinutes()}`,
-              timeZone: findTimeZone(),
-              inTime: findInTime(),
-            });
-          }
+            // ⭐ Іменована функція для правильного видалення
+            const handlePostClick = () => {
+              try {
+                const date = new Date();
+                saveComment({
+                  fb: fb,
+                  status: status,
+                  comment: commentField.value,
+                  commentTime: `${date.getHours()}:${String(date.getMinutes()).padStart(2, "0")}`,
+                  timeZone: findTimeZone(),
+                  inTime: findInTime(),
+                });
+                console.log("✅ Коментар збережений");
+              } catch (error) {
+                console.error("❌ Помилка:", error);
+              }
+            };
 
-          // Remove + add listener
-          postBtn.removeEventListener("click", handlePostClick);
-          postBtn.addEventListener("click", handlePostClick);
-        });
+            // ⭐ Видалити попередній listener
+            if (postBtn._handlePostClick) {
+              postBtn.removeEventListener("click", postBtn._handlePostClick);
+            }
+
+            // ⭐ Зберегти нову функцію
+            postBtn._handlePostClick = handlePostClick;
+            postBtn.addEventListener("click", handlePostClick);
+          },
+          { once: true },
+        ); // ⭐ { once: true } - listener спрацьовує один раз!
       }
 
       // --- Edit + Save поле ---
@@ -999,26 +1125,78 @@
               const timeInputs = timesWrapper.querySelectorAll(
                 "input.mat-mdc-input-element",
               );
-              const onFirstOpenTimes = countTimes(timeInputs);
+
+              // ⭐ Отримуємо кількість часів при завантаженні модалки
+              const initialTimesCount = countTimes(timeInputs).length;
+              console.log(
+                "🕐 При завантаженні модалки було часів:",
+                initialTimesCount,
+              );
+
               const saveBtn = getSaveBtn();
               if (!saveBtn) return;
 
-              function handleSaveClick() {
-                const timesAfterUpdate = countTimes(timeInputs);
+              const handleSaveClick = async () => {
+                try {
+                  console.log("=== SAVE CLICKED ===");
 
-                if (
-                  onFirstOpenTimes.length !== timesAfterUpdate.length &&
-                  !updatedState.updated.includes(fb)
-                ) {
-                  increaseLoad();
-                  saveLoad(fb);
+                  const finalTimesCount = countTimes(timeInputs).length;
+                  console.log("🕐 Після редагування часів:", finalTimesCount);
+
+                  // ⭐ Читаємо ТІ ЖЕ дані що були при завантаженні
+                  updatedState = initUpdated();
+                  console.log(
+                    "FB у updated ДО:",
+                    updatedState.updated.includes(fb),
+                  );
+
+                  let isNewLoad = false;
+
+                  if (
+                    initialTimesCount !== finalTimesCount &&
+                    !updatedState.updated.includes(fb)
+                  ) {
+                    console.log("✅ НОВИЙ LOAD - додаємо");
+                    isNewLoad = true;
+
+                    // ⭐ Додаємо FB у ЛО��АЛЬНИЙ updated array
+                    updatedState.updated.push(fb);
+                    updatedState.loads = (updatedState.loads || 0) + 1;
+                    console.log(
+                      `📝 Локально додали FB ${fb}, loads=${updatedState.loads}`,
+                    );
+
+                    // ⭐ Записуємо ВСЕ за один раз
+                    await StorageQueue.enqueue(
+                      "updated",
+                      JSON.stringify(updatedState),
+                    );
+                    console.log("✅ Записано в localStorage");
+                  }
+
+                  // ⭐ Updates ЗАВЖДИ додаємо
+                  updatedState.updates = (updatedState.updates || 0) + 1;
+                  await StorageQueue.enqueue(
+                    "updated",
+                    JSON.stringify(updatedState),
+                  );
+                  console.log(`📊 Updates=${updatedState.updates}`);
+
+                  showStats();
+                  console.log("✅ Все завершено");
+                } catch (error) {
+                  console.error("❌ Помилка:", error);
                 }
+              };
 
-                increaseUpdate();
+              if (saveBtn._handleSaveClick) {
+                saveBtn.removeEventListener("click", saveBtn._handleSaveClick);
               }
 
-              saveBtn.removeEventListener("click", handleSaveClick);
+              saveBtn._handleSaveClick = handleSaveClick;
               saveBtn.addEventListener("click", handleSaveClick);
+
+              console.log("✅ Listener додано на SAVE кнопку");
 
               timesObserver.disconnect();
             });
