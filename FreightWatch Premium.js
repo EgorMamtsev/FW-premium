@@ -14,7 +14,7 @@
   //#region операційні змінні
   const FUTURES = {
     countUpdates: true,
-    markUpdates: true,
+    markUpdates: false,
     comments: true,
     updatesCounter: true,
     loadsCounter: true,
@@ -23,7 +23,7 @@
     generateSMS: true,
   };
 
-  const dispName = "George";
+  const dispName = "Adam";
 
   const filterParams = {
     byStatus: [],
