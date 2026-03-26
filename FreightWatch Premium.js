@@ -14,7 +14,7 @@
   //#region операційні змінні
   const FUTURES = {
     countUpdates: true,
-    markUpdates: false,
+    markUpdates: true,
     comments: true,
     updatesCounter: true,
     loadsCounter: true,
@@ -23,7 +23,7 @@
     generateSMS: true,
   };
 
-  const dispName = "Adam";
+  const dispName = "George";
 
   const filterParams = {
     byStatus: [],
@@ -108,7 +108,8 @@
   }
 
   function getSMSbntContainer() {
-    return document.querySelector("lgt-button.m-l-4");
+    const lgtBtn = document.querySelector("lgt-button.m-l-4");
+    return lgtBtn?.closest(".row-item");
   }
 
   //#endregion
