@@ -16,7 +16,7 @@
     countUpdates: true,
     markUpdates: true,
     comments: true,
-    updatesCounter: true,
+    updatesCounter: false,
     loadsCounter: true,
     hideSideBar: true,
     filters: false,
@@ -1124,16 +1124,34 @@
               const timesWrapper = document.querySelector("div.m-y-5");
               if (!timesWrapper) return;
 
-              const timeInputs = timesWrapper.querySelectorAll(
-                "input.mat-mdc-input-element",
-              );
+             const timeInputs = timesWrapper.querySelectorAll(
+    "input.mat-mdc-input-element",
+);
+
+if (timeInputs.length === 0) {
+    console.log("⏳ Inputs ще не завантажились...");
+    return;
+}
 
               // ⭐ Отримуємо кількість часів при завантаженні модалки
-              const initialTimesCount = countTimes(timeInputs).length;
-              console.log(
-                "🕐 При завантаженні модалки було часів:",
-                initialTimesCount,
-              );
+              console.log("=== INITIAL CHECK ===");
+
+console.log("timeInputs.length =", timeInputs.length);
+
+timeInputs.forEach((el, i) => {
+  console.log(i, `"${el.value}"`);
+});
+
+const initialTimes = countTimes(timeInputs);
+
+console.log("countTimes() =", initialTimes);
+
+const initialTimesCount = initialTimes.length;
+
+console.log(
+  "🕐 При завантаженні модалки було часів:",
+  initialTimesCount,
+);
 
               const saveBtn = getSaveBtn();
               if (!saveBtn) return;
