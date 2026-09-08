@@ -16,7 +16,7 @@
     countUpdates: true,
     markUpdates: true,
     comments: true,
-    updatesCounter: false,
+    updatesCounter: true,
     loadsCounter: true,
     hideSideBar: true,
     filters: false,
@@ -111,6 +111,14 @@
     const lgtBtn = document.querySelector("lgt-button.m-l-4");
     return lgtBtn?.closest(".row-item");
   }
+
+        function getLoadStatus() {
+        const statusEl = document.querySelector("span.mat-mdc-select-min-line");
+        const status = statusEl.textContent.trim();
+
+        return status;
+
+    }
 
   //#endregion
 
@@ -217,7 +225,7 @@
     }
   }
 
-  // Функція додавання FB у локалсторедж - ВИПРАВЛЕНА
+  // Функція додавання FB у локалсторедж 
   async function increaseLoad() {
     if (!FUTURES.countUpdates) {
       console.warn("⚠️ countUpdates disabled");
@@ -229,7 +237,7 @@
       updatedState.loads = (updatedState.loads || 0) + 1;
       console.log(`📈 Loads: ${updatedState.loads}`);
 
-      // ⭐ ЧЕКАЄМО збереження
+      // ЧЕКАЄМО збереження
       await StorageQueue.enqueue("updated", JSON.stringify(updatedState));
 
       showStats();
@@ -251,7 +259,7 @@
       updatedState.updates = (updatedState.updates || 0) + 1;
       console.log(`📊 Updates: ${updatedState.updates}`);
 
-      // ⭐ ЧЕКАЄМО збереження
+      // ЧЕКАЄМО збереження
       await StorageQueue.enqueue("updated", JSON.stringify(updatedState));
 
       showStats();
@@ -275,7 +283,7 @@
         updatedState.updated.push(fb);
         console.log(`📝 Додаємо FB ${fb} до updated`);
 
-        // ⭐ ЧЕКАЄМО збереження
+        // ЧЕКАЄМО збереження
         await StorageQueue.enqueue("updated", JSON.stringify(updatedState));
 
         return true;
@@ -312,7 +320,7 @@
 
   let commentsState = initComments();
 
-  // зберігає коментар у локал - ВИПРАВЛЕНА
+  // зберігає коментар у локал
   function saveComment(data) {
     if (!FUTURES.comments) {
       console.warn("⚠️ Comments disabled in FUTURES");
@@ -392,8 +400,7 @@
     }
   }
 
-  // знаходить текст коментаря - ВИПРАВЛЕНА
-  // знаходить текст коментаря - ВИПРАВЛЕНА
+  // знаходить текст коментаря
   function findComment() {
     try {
       let commentsBox = document.querySelector("div.comments__regular");
@@ -417,7 +424,7 @@
     }
   }
 
-  // знаходить час коментаря - ВИПРАВЛЕНА
+  // знаходить час коментаря
   function findCommentTime() {
     try {
       const commentTimeBox = document.querySelector("div.comments__regular");
@@ -448,7 +455,7 @@
     }
   }
 
-  //знаходить inTime - ВИПРАВЛЕНА
+  //знаходить inTime 
   function findInTime() {
     try {
       let findStops = document.querySelectorAll("div.stop-item");
@@ -490,7 +497,7 @@
     }
   }
 
-  //знаходить часовий пояс - ВИПРАВЛЕНА
+  //знаходить часовий пояс 
   function findTimeZone() {
     try {
       let findStops = document.querySelectorAll("div.stop-item");
@@ -948,6 +955,9 @@
 
   //#region Generage SMS
 
+
+
+
   function createGenerateTxtBtn(fbNum) {
     if (!FUTURES.generateSMS) {
       return;
@@ -969,16 +979,59 @@
 
   function generateTxtMessage(name, fbNum) {
     const cities = getStops();
-    const message = `Hello , this is ${name} with Landstar Dispatch.\nRegarding load ${cities[0]} -> ${cities[1]} FB# ${fbNum} — `;
-    getComentField().value = message;
+    const status = getLoadStatus()
+    const messageFirstPart = `Hello , this is ${name} with Landstar Dispatch.\nRegarding load ${cities[0]} -> ${cities[1]} FB# ${fbNum} — `;
+    let messageSecondPart;
+
+    switch (status) {
+        case "Need to check" :
+             messageSecondPart = `at what time will you be at the pick up in ${cities[0]} ?`
+            break
+        case "ETA Pickup" :
+             messageSecondPart = `have you arrived at the pick up in ${cities[0]} ?`
+            break
+        case "ETA Delivery" :
+             messageSecondPart = `have you arrived at the delivery in ${cities[1]} ?`
+             break
+        case "At Pickup":
+            messageSecondPart = `have you got loaded in ${cities[0]} ?`
+            break
+        case "At Delivery" :
+            messageSecondPart = `have you got empty in ${cities[1]} ?`
+            break
+        case "In Transit/Loaded" :
+            messageSecondPart = `at what time will you be at the delivery in ${cities[1]}`
+            break
+        default :
+            messageSecondPart = ``
+
+    }
+
+    getComentField().value = messageFirstPart + messageSecondPart;
   }
 
   function getStops() {
     const stops = document.querySelectorAll(".stop-destination");
 
     if (stops.length > 0) {
-      const firstCity = stops[0].textContent.trim();
-      const lastCity = stops[stops.length - 1].textContent.trim();
+        let firstCity;
+        let lastCity;
+
+      const firstCityParts = stops[0].textContent.split(",")
+      if (firstCityParts.length > 2) {
+           firstCity = firstCityParts[0].trim() + "," + firstCityParts[2].trim()
+      } else {
+           firstCity = firstCityParts[0].trim() + "," + firstCityParts[1].trim()
+      }
+
+      const lastCityParts = stops[1].textContent.split(",")
+      if (lastCityParts.length > 2) {
+           lastCity = lastCityParts[0].trim() + "," + lastCityParts[2].trim()
+      } else {
+           lastCity = lastCityParts[0].trim() + "," + lastCityParts[1].trim()
+      }
+      //const firstCity = stops[0].textContent.trim();
+      //const lastCity = stops[stops.length - 1].textContent.trim();
 
       return [firstCity, lastCity];
     }
@@ -1039,7 +1092,7 @@
     // Observer на модальне вікно
     const modalObserver = new MutationObserver((mutations, obs) => {
       const stopsWrapper = document.querySelector("div.stops-wrapper");
-      const statusEl = document.querySelector("span.mat-mdc-select-min-line");
+      const statusEl = document.querySelector("span.mat-mdc-select-min-line"); // треба дочекатись завантаження елемента перед отриманням статуса getLoadStatus
       const fbEl = document.querySelector(".m-r-1 a");
       const commentWrapper = document
         .querySelector("div.dispatch-comments")
@@ -1048,7 +1101,8 @@
       const smsBtnContainer = getSMSbntContainer();
       const commentField = getComentField();
       const fb = Number(fbEl.textContent.trim());
-      const status = statusEl.textContent.trim();
+      //const status = statusEl.textContent.trim(); // change for get statusFunction
+        const status = getLoadStatus()
 
       // чекаємо всі потрібні елементи
       if (
