@@ -1000,7 +1000,7 @@
             messageSecondPart = `have you got empty in ${cities[1]} ?`
             break
         case "In Transit/Loaded" :
-            messageSecondPart = `at what time will you be at the delivery in ${cities[1]}`
+            messageSecondPart = `at what time will you be at the delivery in ${cities[1]} ?`
             break
         default :
             messageSecondPart = ``
@@ -1019,19 +1019,17 @@
 
       const firstCityParts = stops[0].textContent.split(",")
       if (firstCityParts.length > 2) {
-           firstCity = firstCityParts[0].trim() + "," + firstCityParts[2].trim()
+           firstCity = firstCityParts[0].trim() + ", " + firstCityParts[2].trim()
       } else {
-           firstCity = firstCityParts[0].trim() + "," + firstCityParts[1].trim()
+           firstCity = firstCityParts[0].trim() + ", " + firstCityParts[1].trim()
       }
 
-      const lastCityParts = stops[1].textContent.split(",")
+      const lastCityParts = stops[stops.length - 1].textContent.split(",")
       if (lastCityParts.length > 2) {
-           lastCity = lastCityParts[0].trim() + "," + lastCityParts[2].trim()
+           lastCity = lastCityParts[0].trim() + ", " + lastCityParts[2].trim()
       } else {
-           lastCity = lastCityParts[0].trim() + "," + lastCityParts[1].trim()
+           lastCity = lastCityParts[0].trim() + ", " + lastCityParts[1].trim()
       }
-      //const firstCity = stops[0].textContent.trim();
-      //const lastCity = stops[stops.length - 1].textContent.trim();
 
       return [firstCity, lastCity];
     }
