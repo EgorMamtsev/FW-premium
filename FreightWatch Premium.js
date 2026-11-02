@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Freight Watch Premium
+// @name         Freight Watch Premium (Fixed)
 // @namespace    http://tampermonkey.net/
-// @version      2026-02-20
-// @description  You will see
+// @version      2026-11-02.10
+// @description  You will see - adapted to new ERP DOM
 // @author       GM
 // @match        https://erp.gologity.com/freight-watch/dispatch
 // @grant        none
@@ -31,6 +31,37 @@
     byDate: [],
   };
 
+  // ====== ДОПОМІЖНІ ФУНКЦІЇ ======
+
+  function getTableRows() {
+    const tbody = document.querySelector("tbody");
+    if (!tbody) return [];
+    return Array.from(tbody.querySelectorAll("tr.ng-star-inserted"));
+  }
+
+  function getFbFromRow(row) {
+    try {
+      const td = row.children[1];
+      if (!td) return null;
+      const text = td.textContent.trim();
+      const match = text.match(/(\d+)/);
+      return match ? Number(match[1]) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function getStatusFromRow(row) {
+    try {
+      const statusTd = row.querySelector("td.status");
+      if (!statusTd) return "";
+      const span = statusTd.querySelector("span");
+      return span ? span.textContent.trim() : statusTd.textContent.trim();
+    } catch (e) {
+      return "";
+    }
+  }
+
   function createElem(tag, className, textContent) {
     const el = document.createElement(tag);
     if (className) el.classList.add(className);
@@ -47,41 +78,61 @@
         addFilterParams(filterParametr[0], filterParametr[1], el.checked);
       });
     }
-
     return el;
   }
 
   //#endregion
 
   //#region getFunctions
+
   function getTbody() {
     return document.querySelector("tbody");
   }
 
   function getSaveBtn() {
-    return document.querySelector("button.m-l-4");
+    const allButtons = Array.from(document.querySelectorAll("button"));
+    const textSaveBtn = allButtons.find(b => b.textContent.trim() === "Save");
+    if (textSaveBtn) return textSaveBtn;
+
+    const primaryBtn = document.querySelector("button.btn-primary");
+    if (primaryBtn) return primaryBtn;
+
+    const icons = Array.from(document.querySelectorAll("mat-icon"));
+    const saveMatIcon = icons.find(i => i.textContent.trim() === "save");
+    if (saveMatIcon) return saveMatIcon.closest("button");
+
+    return document.querySelector("button.lgt-button-white") || document.querySelector("button.m-l-4");
   }
 
   function getEditBtn() {
     try {
+      const icons = Array.from(document.querySelectorAll("mat-icon"));
+      const editMatIcon = icons.find(i => i.textContent.trim() === "edit");
+      if (editMatIcon) {
+        const btn = editMatIcon.closest("button");
+        if (btn) return btn;
+      }
+
       const stopsWrapper = document.querySelector("div.stops-wrapper");
       if (!stopsWrapper) return null;
-
-      return stopsWrapper.querySelector("button.lgt-button-white");
+      return stopsWrapper.querySelector("button.lgt-button-white") || stopsWrapper.querySelector("button");
     } catch (error) {
-      console.error("❌ Помилка в getEditBtn:", error);
       return null;
     }
   }
 
   function getComentField() {
     try {
-      const postComment = document.querySelector("div.post-comment");
-      if (!postComment) return null;
-
-      return postComment.querySelector("textarea.cdk-textarea-autosize");
+      let textarea = document.querySelector("lgt-post-comment textarea.cdk-textarea-autosize");
+      if (textarea) return textarea;
+      const allTextareas = document.querySelectorAll("textarea.cdk-textarea-autosize");
+      for (const ta of allTextareas) {
+        const parent = ta.closest("lgt-form-field-textarea");
+        if (parent && parent.getAttribute("formcontrolname") === "dispatchNotes") continue;
+        return ta;
+      }
+      return null;
     } catch (error) {
-      console.error("❌ Помилка в getComentField:", error);
       return null;
     }
   }
@@ -89,11 +140,14 @@
   function getPostComentBtn() {
     try {
       const formActions = document.querySelector("lgt-form-actions.fit");
-      if (!formActions) return null;
-
-      return formActions.querySelector("button.lgt-button-primary");
+      if (formActions) return formActions.querySelector("button.lgt-button-primary");
+      const commentField = getComentField();
+      if (commentField) {
+          const container = commentField.closest('.post-comment');
+          if (container) return container.querySelector('button');
+      }
+      return null;
     } catch (error) {
-      console.error("❌ Помилка в getPostComentBtn:", error);
       return null;
     }
   }
@@ -108,39 +162,39 @@
   }
 
   function getSMSbntContainer() {
-    const lgtBtn = document.querySelector("lgt-button.m-l-4");
-    return lgtBtn?.closest(".row-item");
+    const saveLgtBtn = document.querySelector("lgt-button.m-l-4");
+    if (saveLgtBtn) return saveLgtBtn.closest(".row-item");
+    return document.querySelector("div.row-item.d-flex.m-b-2") || null;
   }
 
-        function getLoadStatus() {
-        const statusEl = document.querySelector("span.mat-mdc-select-min-line");
-        const status = statusEl.textContent.trim();
-
-        return status;
-
+  function getLoadStatus() {
+    try {
+      const statusEl = document.querySelector("span.mat-mdc-select-min-line");
+      if (!statusEl) return "";
+      return statusEl.textContent.trim();
+    } catch (e) {
+      return "";
     }
+  }
 
   //#endregion
 
   //#region Mark and Count updates
 
-  // ====== STORAGE QUEUE SYSTEM ======
   const StorageQueue = (() => {
     const queue = [];
     let isProcessing = false;
-
     const process = async () => {
       if (isProcessing || queue.length === 0) return;
       isProcessing = true;
-
       while (queue.length > 0) {
         const { key, value, resolve } = queue.shift();
         try {
           localStorage.setItem(key, value);
-          console.log(`✅ Saved to localStorage: ${key}`);
+          console.log(`💾 [StorageQueue] Дані збережено в ${key}`);
           resolve(true);
         } catch (error) {
-          console.error(`❌ Failed to save ${key}:`, error);
+          console.error(`❌ [StorageQueue] Помилка збереження в ${key}`, error);
           resolve(false);
         }
         await new Promise((r) => setTimeout(r, 50));
@@ -149,458 +203,226 @@
     };
 
     return {
-      enqueue: (key, value) => {
-        return new Promise((resolve) => {
-          queue.push({ key, value, resolve });
-          process();
-        });
-      },
+      enqueue: (key, value) => new Promise((resolve) => {
+        queue.push({ key, value, resolve });
+        process();
+      }),
       read: (key, defaultValue) => {
         try {
           const value = localStorage.getItem(key);
           return value ? JSON.parse(value) : defaultValue;
         } catch (error) {
-          console.error(`❌ Failed to read ${key}:`, error);
           return defaultValue;
         }
       },
     };
   })();
 
-  // Ініціалізація локалсторедж
   function initUpdated() {
-    return StorageQueue.read("updated", {
-      updates: 0,
-      loads: 0,
-      updated: [],
-    });
+    return StorageQueue.read("updated", { updates: 0, loads: 0, updated: [] });
   }
 
   let updatedState = initUpdated();
 
-  // Функція для підсвітки рядків
-  function restoreUpdatedRows(updatedState) {
-    if (!FUTURES.markUpdates) {
-      return;
-    }
-    if (!getTbody()) {
-      return;
-    }
-
-    const rows = Array.from(getTbody().children);
-
+  function restoreUpdatedRows(state) {
+    if (!FUTURES.markUpdates) return;
+    const tbody = getTbody();
+    if (!tbody) return;
+    const rows = Array.from(tbody.children);
     rows.forEach((row) => {
-      const fb = Number(row.children[1].textContent);
+      const fb = getFbFromRow(row);
+      if (fb === null) return;
+      const fbCell = row.children[1];
+      if (!fbCell) return;
 
-      if (
-        updatedState.updated.includes(fb) &&
-        !row.children[1].classList.contains("updated")
-      ) {
-        row.children[1].classList.add("updated");
+      const textElement = fbCell.querySelector("p, span") || fbCell;
+
+      if (state.updated.includes(fb) && !textElement.classList.contains("updated")) {
+        textElement.classList.add("updated");
       }
     });
   }
 
-  //видаляє фб яких вже не має на сторінц��
   function removerMissingLoads() {
     const tbody = getTbody();
     if (!tbody) return;
-
     const rows = Array.from(tbody.children);
-
-    const fbOnPage = rows.map((row) =>
-      Number(row.children[1].textContent.trim()),
-    );
-
+    const fbOnPage = rows.map((row) => getFbFromRow(row)).filter((fb) => fb !== null);
     updatedState = initUpdated();
-
     const before = updatedState.updated.length;
-
-    updatedState.updated = updatedState.updated.filter((fb) =>
-      fbOnPage.includes(Number(fb)),
-    );
-
+    updatedState.updated = updatedState.updated.filter((fb) => fbOnPage.includes(Number(fb)));
     if (before !== updatedState.updated.length) {
       StorageQueue.enqueue("updated", JSON.stringify(updatedState));
     }
   }
 
-  // Функція додавання FB у локалсторедж 
-  async function increaseLoad() {
-    if (!FUTURES.countUpdates) {
-      console.warn("⚠️ countUpdates disabled");
-      return false;
-    }
-
-    try {
-      updatedState = initUpdated();
-      updatedState.loads = (updatedState.loads || 0) + 1;
-      console.log(`📈 Loads: ${updatedState.loads}`);
-
-      // ЧЕКАЄМО збереження
-      await StorageQueue.enqueue("updated", JSON.stringify(updatedState));
-
-      showStats();
-      return true;
-    } catch (error) {
-      console.error("❌ Помилка в increaseLoad:", error);
-      return false;
-    }
-  }
-
-  async function increaseUpdate() {
-    if (!FUTURES.countUpdates) {
-      console.warn("⚠️ countUpdates disabled");
-      return false;
-    }
-
-    try {
-      updatedState = initUpdated();
-      updatedState.updates = (updatedState.updates || 0) + 1;
-      console.log(`📊 Updates: ${updatedState.updates}`);
-
-      // ЧЕКАЄМО збереження
-      await StorageQueue.enqueue("updated", JSON.stringify(updatedState));
-
-      showStats();
-      return true;
-    } catch (error) {
-      console.error("❌ Помилка в increaseUpdate:", error);
-      return false;
-    }
-  }
-
-  async function saveLoad(fb) {
-    if (!FUTURES.markUpdates) {
-      console.warn("⚠️ markUpdates disabled");
-      return false;
-    }
-
-    try {
-      updatedState = initUpdated();
-
-      if (!updatedState.updated.includes(fb)) {
-        updatedState.updated.push(fb);
-        console.log(`📝 Додаємо FB ${fb} до updated`);
-
-        // ЧЕКАЄМО збереження
-        await StorageQueue.enqueue("updated", JSON.stringify(updatedState));
-
-        return true;
-      }
-
-      console.log(`⚠️ FB ${fb} вже є в updated`);
-      return false;
-    } catch (error) {
-      console.error("❌ Помилка в saveLoad:", error);
-      return false;
-    }
-  }
-
-  // рахує кількість заповнених інпутів часу для порівняння і розуміння +loads або +updates
   function countTimes(range) {
     const times = [];
     for (let i = 0; i < range.length; i += 1) {
-      if (range[i].value != "") {
-        times.push(range[i].value);
-      }
+      if (range[i].value && range[i].value.trim() !== "") times.push(range[i].value);
     }
-
     return times;
   }
-
   //#endregion
 
   //#region Comments
-
-  //отримуємо коментарі з локала
   function initComments() {
     return StorageQueue.read("comments", []);
   }
 
   let commentsState = initComments();
 
-  // зберігає коментар у локал
   function saveComment(data) {
-    if (!FUTURES.comments) {
-      console.warn("⚠️ Comments disabled in FUTURES");
-      return false;
-    }
-
-    if (!data || typeof data.fb === "undefined") {
-      console.error("❌ Invalid comment data:", data);
-      return false;
-    }
-
+    if (!FUTURES.comments || !data || typeof data.fb === "undefined" || data.fb === null) return false;
     try {
       commentsState = initComments();
-
-      if (!Array.isArray(commentsState)) {
-        console.error("❌ Comments state is not an array, resetting");
-        commentsState = [];
-      }
-
-      const index = commentsState.findIndex(
-        (c) => Number(c.fb) === Number(data.fb),
-      );
-
-      if (index !== -1) {
-        console.log(`📝 Оновлення коментара для FB ${data.fb}`);
-        commentsState[index] = data;
-      } else {
-        console.log(`📝 Додавання нового коментара для FB ${data.fb}`);
-        commentsState.push(data);
-      }
-
+      if (!Array.isArray(commentsState)) commentsState = [];
+      const index = commentsState.findIndex((c) => Number(c.fb) === Number(data.fb));
+      if (index !== -1) commentsState[index] = data;
+      else commentsState.push(data);
       StorageQueue.enqueue("comments", JSON.stringify(commentsState));
-      console.log("✅ Коментар успішно збережений");
       return true;
-    } catch (error) {
-      console.error("❌ Error in saveComment:", error);
-      return false;
-    }
+    } catch (error) { return false; }
   }
 
-  // збирає обʼєкт коментаря який буде збережено - ВИПРАВЛЕНА
   function generateComment(fb, status, commentBox) {
-    if (!FUTURES.comments) {
-      return;
-    }
-
+    if (!FUTURES.comments || !fb) return;
     try {
-      let willBeSaved = {
-        fb: fb,
-        status: status,
-        comment: "no comments",
-        timestamp: new Date().toISOString(),
-      };
-
+      let willBeSaved = { fb: fb, status: status, comment: "no comments", timestamp: new Date().toISOString() };
       if (commentBox && commentBox.children && commentBox.children.length > 0) {
         try {
-          const comment = findComment() || "no comments yet";
-          const commentTime = findCommentTime ? findCommentTime() : null;
-          const timeZone = findTimeZone ? findTimeZone() : null;
-          const inTime = findInTime ? findInTime() : null;
-
           willBeSaved = {
             ...willBeSaved,
-            comment: comment,
-            commentTime: commentTime,
-            timeZone: timeZone,
-            inTime: inTime,
+            comment: findComment() || "no comments yet",
+            commentTime: findCommentTime ? findCommentTime() : null,
+            timeZone: findTimeZone ? findTimeZone() : null,
+            inTime: findInTime ? findInTime() : null,
           };
-        } catch (error) {
-          console.error("❌ Error reading comment data:", error);
-        }
+        } catch (error) {}
       }
-
       saveComment(willBeSaved);
-    } catch (error) {
-      console.error("❌ Error in generateComment:", error);
-    }
+    } catch (error) {}
   }
 
-  // знаходить текст коментаря
   function findComment() {
     try {
       let commentsBox = document.querySelector("div.comments__regular");
-      if (!commentsBox) return "no comments yet";
-
-      if (commentsBox.children.length === 0) {
-        return "no comments yet";
-      } else {
-        const commentBody = commentsBox.querySelector(".body1");
-        if (!commentBody) return "no comments yet";
-
-        let comment = commentBody.textContent;
-        if (comment.length > 50) {
-          comment = `${comment.slice(0, 50)}...`;
-        }
-        return comment;
-      }
-    } catch (error) {
-      console.error("❌ Error in findComment:", error);
-      return "no comments yet";
-    }
+      if (!commentsBox || commentsBox.children.length === 0) return "no comments yet";
+      const commentBody = commentsBox.querySelector(".body1");
+      if (!commentBody) return "no comments yet";
+      let comment = commentBody.textContent;
+      if (comment.length > 50) comment = `${comment.slice(0, 50)}...`;
+      return comment;
+    } catch (error) { return "no comments yet"; }
   }
 
-  // знаходить час коментаря
   function findCommentTime() {
     try {
       const commentTimeBox = document.querySelector("div.comments__regular");
       if (!commentTimeBox) return null;
-
-      const commentContainer = commentTimeBox.querySelector(
-        "div.comment-container",
-      );
+      const commentContainer = commentTimeBox.querySelector("div.comment-container");
       if (!commentContainer) return null;
-
       const dateSpan = commentContainer.querySelector("span.date");
       if (!dateSpan) return null;
-
-      const commentTime = `${dateSpan.textContent.at(
-        -8,
-      )}${dateSpan.textContent.at(-7)}${dateSpan.textContent.at(
-        -6,
-      )}${dateSpan.textContent.at(-5)}${dateSpan.textContent.at(
-        -4,
-      )}${dateSpan.textContent.at(-3)}${dateSpan.textContent.at(
-        -2,
-      )}${dateSpan.textContent.at(-1)}`;
-
-      return commentTime;
-    } catch (error) {
-      console.error("❌ Error in findCommentTime:", error);
-      return null;
-    }
+      return dateSpan.textContent.slice(-8);
+    } catch (error) { return null; }
   }
 
-  //знаходить inTime 
   function findInTime() {
     try {
       let findStops = document.querySelectorAll("div.stop-item");
       if (!findStops || findStops.length === 0) return null;
-
       let pickUpDateItem = findStops[0].querySelectorAll("p.date");
-      let delDateItem =
-        findStops[findStops.length - 1].querySelectorAll("p.date");
-
+      let delDateItem = findStops[findStops.length - 1].querySelectorAll("p.date");
       if (!pickUpDateItem || !delDateItem) return null;
-
-      if (pickUpDateItem[2] && pickUpDateItem[2].textContent == "") {
-        let inTime = `${pickUpDateItem[1].textContent.at(
-          -5,
-        )}${pickUpDateItem[1].textContent.at(
-          -4,
-        )}${pickUpDateItem[1].textContent.at(
-          -3,
-        )}${pickUpDateItem[1].textContent.at(
-          -2,
-        )}${pickUpDateItem[1].textContent.at(-1)}`;
-
-        return inTime;
-      } else if (delDateItem[1]) {
-        let inTime = `${delDateItem[1].textContent.at(
-          -5,
-        )}${delDateItem[1].textContent.at(-4)}${delDateItem[1].textContent.at(
-          -3,
-        )}${delDateItem[1].textContent.at(-2)}${delDateItem[1].textContent.at(
-          -1,
-        )}`;
-
-        return inTime;
-      }
+      if (pickUpDateItem[2] && pickUpDateItem[2].textContent == "") return pickUpDateItem[1].textContent.slice(-5);
+      else if (delDateItem[1]) return delDateItem[1].textContent.slice(-5);
       return null;
-    } catch (error) {
-      console.error("❌ Error in findInTime:", error);
-      return null;
-    }
+    } catch (error) { return null; }
   }
 
-  //знаходить часовий пояс 
   function findTimeZone() {
     try {
       let findStops = document.querySelectorAll("div.stop-item");
-      let pickUpDateItem = findStops[0].querySelectorAll("p.date");
+      let pickUpDateItem = findStops[0]?.querySelectorAll("p.date");
       let findTimeZoneBox = document.querySelectorAll("p.m-b-1");
-
-      if (!pickUpDateItem || !findStops || !findTimeZoneBox) {
-        return null;
-      }
-
-      if (pickUpDateItem[2] && pickUpDateItem[2].textContent == "") {
-        let timeZone = `${findTimeZoneBox[0].textContent.at(
-          -3,
-        )}${findTimeZoneBox[0].textContent.at(
-          -2,
-        )}${findTimeZoneBox[0].textContent.at(-1)}`;
-        return timeZone;
-      } else if (findTimeZoneBox[1]) {
-        let timeZone = `${findTimeZoneBox[1].textContent.at(
-          -3,
-        )}${findTimeZoneBox[1].textContent.at(
-          -2,
-        )}${findTimeZoneBox[1].textContent.at(-1)}`;
-        return timeZone;
-      }
+      if (!pickUpDateItem || !findStops || !findTimeZoneBox) return null;
+      if (pickUpDateItem[2] && pickUpDateItem[2].textContent == "") return findTimeZoneBox[0]?.textContent.slice(-3) || null;
+      else if (findTimeZoneBox[1]) return findTimeZoneBox[1].textContent.slice(-3);
       return null;
-    } catch (error) {
-      console.error("❌ Error in findTimeZone:", error);
-      return null;
-    }
+    } catch (error) { return null; }
   }
 
-  //малює коменти в таблицю
   function restoreComments() {
-    if (!FUTURES.comments) {
-      return;
-    }
-    const commentInterwal = setInterval(() => {
+    if (!FUTURES.comments) return;
+    setInterval(() => {
       commentsState = initComments();
       const tbody = getTbody();
       if (!tbody) return;
-
       const rows = Array.from(tbody.children);
-
       rows.forEach((row) => {
-        const fb = Number(row.children[1].textContent);
-
+        const fb = getFbFromRow(row);
+        if (fb === null) return;
         const commentData = commentsState.find((c) => Number(c.fb) === fb);
-
         if (!commentData) return;
 
-        if (row.children[6]) {
-          row.children[6].textContent =
-            `${commentData.status || ""} ${commentData.inTime || ""} ${commentData.timeZone || ""}`.trim();
+        const statusTd = row.querySelector("td.status");
+        if (statusTd) {
+          const extra = [commentData.inTime, commentData.timeZone].filter(Boolean).join(" ");
+          if (extra) {
+            let extraSpan = statusTd.querySelector(".script-extra-status");
+            if (!extraSpan) {
+              extraSpan = document.createElement("span");
+              extraSpan.className = "script-extra-status";
+              extraSpan.style.fontSize = "10px";
+              extraSpan.style.marginLeft = "4px";
+              extraSpan.style.color = "#666";
+              (statusTd.querySelector("div") || statusTd).appendChild(extraSpan);
+            }
+            extraSpan.textContent = extra;
+          }
         }
 
-        if (row.children[7]) {
-          row.children[7].textContent =
-            `${commentData.commentTime || ""} ${commentData.comment || ""}`.trim();
+        let commentCell = null;
+        if (statusTd) {
+          let next = statusTd.nextElementSibling;
+          while (next && (next.textContent.trim() === "" || next.innerHTML.includes("&nbsp;"))) {
+            if (next.textContent.trim() === "" || next.innerHTML.includes("&nbsp;")) {
+              commentCell = next;
+              break;
+            }
+            next = next.nextElementSibling;
+          }
+        }
+        if (commentCell) {
+          commentCell.textContent = `${commentData.commentTime || ""} ${commentData.comment || ""}`.trim();
         }
       });
     }, 500);
   }
   restoreComments();
 
-  //видаляє коментрарі
   function cleanupComments() {
     commentsState = initComments();
     const tbody = getTbody();
     if (!tbody) return;
-
     const rows = Array.from(tbody.children);
-
-    const orangeFBs = rows
-      .filter((r) => r.classList.contains("orange"))
-      .map((r) => Number(r.children[1].textContent));
-
-    commentsState = commentsState.filter((c) =>
-      orangeFBs.includes(Number(c.fb)),
-    );
-
+    const orangeFBs = rows.filter((r) => r.classList.contains("orange")).map((r) => getFbFromRow(r)).filter((fb) => fb !== null);
+    commentsState = commentsState.filter((c) => orangeFBs.includes(Number(c.fb)));
     StorageQueue.enqueue("comments", JSON.stringify(commentsState));
   }
-
   //#endregion
 
   //#region LoadsCounter
-
   const counters = {};
 
-  //створюємо лічильник
   function createLoadsCounter() {
-    if (!FUTURES.loadsCounter) {
-      return;
-    }
+    if (!FUTURES.loadsCounter) return;
     const container = document.querySelector(".m-b-2");
-    const dispatchDeliveredBnts = document.querySelector(
-      ".toggle-buttons-wrapper",
-    );
-
+    const dispatchDeliveredBnts = document.querySelector(".toggle-buttons-wrapper");
+    if (!container) return;
     const loadsCounter = document.createElement("div");
     loadsCounter.classList.add("loads-counter");
-
     container.insertBefore(loadsCounter, dispatchDeliveredBnts);
 
     counters.whiteLoads = createCounterItem("need-to-check", "Need to check");
@@ -611,95 +433,46 @@
     counters.totatlLoads = createCounterItem("total", "Total");
 
     loadsCounter.append(
-      counters.whiteLoads.element,
-      counters.pinkLoads.element,
-      counters.yellowLoads.element,
-      counters.greenLoads.element,
-      counters.noAnswerLoads.element,
-      counters.totatlLoads.element,
+      counters.whiteLoads.element, counters.pinkLoads.element, counters.yellowLoads.element,
+      counters.greenLoads.element, counters.noAnswerLoads.element, counters.totatlLoads.element
     );
   }
 
-  //функція шаблон для створення елементів лічильника
   function createCounterItem(mod, itemLabel) {
     const item = document.createElement("div");
     item.classList.add("loads-counter__item", `loads-counter__item--${mod}`);
-
     const numberOfLoads = document.createElement("div");
     numberOfLoads.classList.add("loads-counter__count");
-
     const label = document.createElement("div");
     label.classList.add("loads-counter__label");
     label.textContent = itemLabel;
-
     item.append(numberOfLoads, label);
-
     return { element: item, numberOfElem: numberOfLoads };
   }
 
-  // функції рахування
-  function countPink() {
-    const pinkLoads = getTbody().querySelectorAll("tr.pink");
-    const countPink = pinkLoads.length;
-    counters.pinkLoads.numberOfElem.textContent = countPink;
-  }
-
-  function countYellow() {
-    const yellowLoads = getTbody().querySelectorAll("tr.orange");
-    const countYellow = yellowLoads.length;
-    counters.yellowLoads.numberOfElem.textContent = countYellow;
-  }
-
-  function countGreen() {
-    const greenLoads = getTbody().querySelectorAll("tr.green");
-    const countGreen = greenLoads.length;
-    counters.greenLoads.numberOfElem.textContent = countGreen;
-  }
-
-  function countNAloads() {
-    const noAnswerLoads = getTbody().querySelectorAll("tr.red");
-    const countNA = noAnswerLoads.length;
-    counters.noAnswerLoads.numberOfElem.textContent = countNA;
-  }
-
-  function countTotal() {
-    const totatlLoads = getTbody().querySelectorAll("tr");
-    const countTotal = totatlLoads.length;
-    counters.totatlLoads.numberOfElem.textContent = countTotal;
-  }
-
+  function countPink() { counters.pinkLoads.numberOfElem.textContent = getTableRows().filter((r) => r.classList.contains("pink")).length; }
+  function countYellow() { counters.yellowLoads.numberOfElem.textContent = getTableRows().filter((r) => r.classList.contains("orange")).length; }
+  function countGreen() { counters.greenLoads.numberOfElem.textContent = getTableRows().filter((r) => r.classList.contains("green")).length; }
+  function countNAloads() { counters.noAnswerLoads.numberOfElem.textContent = getTableRows().filter((r) => r.classList.contains("red")).length; }
+  function countTotal() { counters.totatlLoads.numberOfElem.textContent = getTableRows().length; }
   function countWhiteLoads() {
-    const total = getTbody().querySelectorAll("tr").length;
-    const colored = getTbody().querySelectorAll(
-      "tr.pink, tr.orange, tr.green, tr.red",
-    ).length;
-
-    const count = total - colored;
-
-    counters.whiteLoads.numberOfElem.textContent = count;
+    const all = getTableRows();
+    const colored = all.filter((r) => r.classList.contains("pink") || r.classList.contains("orange") || r.classList.contains("green") || r.classList.contains("red")).length;
+    counters.whiteLoads.numberOfElem.textContent = all.length - colored;
   }
 
-  //функція починає рахувати
   function startCount() {
-    if (!FUTURES.loadsCounter) {
-      return;
-    }
-    countWhiteLoads();
-    countPink();
-    countYellow();
-    countGreen();
-    countNAloads();
-    countTotal();
+    if (!FUTURES.loadsCounter) return;
+    countWhiteLoads(); countPink(); countYellow(); countGreen(); countNAloads(); countTotal();
   }
   //#endregion
 
   //#region UpdatesCounter
-
   function createUpdatesCounter() {
-    if (!FUTURES.updatesCounter) {
-      return;
-    }
+    if (!FUTURES.updatesCounter) return;
     const elemBeforeCounter = document.querySelector(".headline5");
+    if (!elemBeforeCounter) return;
+
     const counterContainer = createElem("div", "counterContainer");
     elemBeforeCounter.append(counterContainer);
 
@@ -729,39 +502,30 @@
   }
 
   function showStats() {
-    if (!FUTURES.updatesCounter) {
-      return;
-    }
-    document.querySelector(".updateCounter .updateNumber").textContent =
-      updatedState.updates;
-    document.querySelector(".loadsCounter .updateNumber").textContent =
-      updatedState.loads;
+    if (!FUTURES.updatesCounter) return;
+    const u = document.querySelector(".updateCounter .updateNumber");
+    const l = document.querySelector(".loadsCounter .updateNumber");
+    if (u) u.textContent = updatedState.updates;
+    if (l) l.textContent = updatedState.loads;
   }
-
   //#endregion
 
   //#region Hide SideBar
   function hideSideBar() {
-    if (!FUTURES.hideSideBar) {
-      return;
-    }
-
+    if (!FUTURES.hideSideBar) return;
     const sideBtn = document.querySelector(".side-menu__toggle");
-    sideBtn.click();
+    if (sideBtn) sideBtn.click();
   }
   //#endregion
 
   //#region Filters
-
   function createFilters() {
-    if (!FUTURES.filters) {
-      return;
-    }
-
+    if (!FUTURES.filters) return;
     const elemBefore = document.querySelector(".headline5");
+    if (!elemBefore) return;
+
     const filterCountainer = createElem("div", "filter-container");
     elemBefore.append(filterCountainer);
-
     const filterByStatus = createElem("div", "filter-by-status__wrapper");
     filterCountainer.append(filterByStatus);
 
@@ -777,512 +541,301 @@
     const clearFilters = createElem("button", "clear-filters", "Default");
     clearFilters.addEventListener("click", () => {
       Object.keys(filterParams).forEach((k) => (filterParams[k] = []));
-
-      const allCheckboxes = document.querySelectorAll(
-        ".filter-container input[type='checkbox']",
-      );
-      allCheckboxes.forEach((cb) => (cb.checked = false));
-
+      document.querySelectorAll(".filter-container input[type='checkbox']").forEach((cb) => (cb.checked = false));
       applyFilters(filterParams);
     });
     filterCountainer.append(clearFilters);
 
-    filterByStatus.append(
-      needToCheckWrapper,
-      inTransitWrapper,
-      etaToPickWrapper,
-      etaToDeliveryWrapper,
-      atPickWrapper,
-      atDeliveryWrapper,
-      noAnswerWrapper,
-      todayDateWrapper,
-    );
+    filterByStatus.append(needToCheckWrapper, inTransitWrapper, etaToPickWrapper, etaToDeliveryWrapper, atPickWrapper, atDeliveryWrapper, noAnswerWrapper, todayDateWrapper);
 
-    const needToCheckLabel = createElem(
-      "span",
-      "need-to-check__label",
-      "Need to check",
-    );
-    const needToCheckInput = createCheckBox(
-      "input",
-      "filter__input",
-      "checkbox",
-      ["byStatus", "Need to check"],
-    );
-
-    needToCheckWrapper.append(needToCheckLabel, needToCheckInput);
-
-    const etaToPiclabel = createElem(
-      "span",
-      "eta-to-pick__label",
-      "ETA to pickup",
-    );
-    const etaToPicInput = createCheckBox("input", "filter__input", "checkbox", [
-      "byStatus",
-      "ETA Pickup",
-    ]);
-    etaToPickWrapper.append(etaToPiclabel, etaToPicInput);
-
-    const etaToDeliverylabel = createElem(
-      "span",
-      "eta-to-delivery__label",
-      "ETA to delivery",
-    );
-    const etaToDeliveryInput = createCheckBox(
-      "input",
-      "filter__input",
-      "checkbox",
-      ["byStatus", "ETA Delivery"],
-    );
-    etaToDeliveryWrapper.append(etaToDeliverylabel, etaToDeliveryInput);
-
-    const inTransitLabel = createElem(
-      "span",
-      "in-transit__label",
-      "In transit",
-    );
-    const inTransitInput = createCheckBox(
-      "input",
-      "filter__input",
-      "checkbox",
-      ["byStatus", "In Transit/Loaded"],
-    );
-    inTransitWrapper.append(inTransitLabel, inTransitInput);
-
-    const atPickLabel = createElem("span", "at-pick__label", "At pickup");
-    const atPickInput = createCheckBox("input", "filter__input", "checkbox", [
-      "byStatus",
-      "At Pickup",
-    ]);
-    atPickWrapper.append(atPickLabel, atPickInput);
-
-    const atDeliveryLabel = createElem(
-      "span",
-      "at-delivery__label",
-      "At delivery",
-    );
-    const atDeliveryInput = createCheckBox(
-      "input",
-      "filter__input",
-      "checkbox",
-      ["byStatus", "At Delive"],
-    );
-    atDeliveryWrapper.append(atDeliveryLabel, atDeliveryInput);
-
-    const noAnswerLabel = createElem("span", "no-answer__label", "N/A");
-    const noAnswerInput = createCheckBox("input", "filter__input", "checkbox", [
-      "byClass",
-      "red",
-    ]);
-    noAnswerWrapper.append(noAnswerLabel, noAnswerInput);
-
-    const todayLabel = createElem("span", "today-date__label", "Today");
-
-    const todayInput = createCheckBox(
-      "input",
-      "today-date__input",
-      "checkbox",
-      ["byDate", getTodayDate()],
-    );
-    todayDateWrapper.append(todayLabel, todayInput);
+    needToCheckWrapper.append(createElem("span", "need-to-check__label", "Need to check"), createCheckBox("input", "filter__input", "checkbox", ["byStatus", "Need to check"]));
+    etaToPickWrapper.append(createElem("span", "eta-to-pick__label", "ETA to pickup"), createCheckBox("input", "filter__input", "checkbox", ["byStatus", "ETA Pickup"]));
+    etaToDeliveryWrapper.append(createElem("span", "eta-to-delivery__label", "ETA to delivery"), createCheckBox("input", "filter__input", "checkbox", ["byStatus", "ETA Delivery"]));
+    inTransitWrapper.append(createElem("span", "in-transit__label", "In transit"), createCheckBox("input", "filter__input", "checkbox", ["byStatus", "In Transit/Loaded"]));
+    atPickWrapper.append(createElem("span", "at-pick__label", "At pickup"), createCheckBox("input", "filter__input", "checkbox", ["byStatus", "At Pickup"]));
+    atDeliveryWrapper.append(createElem("span", "at-delivery__label", "At delivery"), createCheckBox("input", "filter__input", "checkbox", ["byStatus", "At Delive"]));
+    noAnswerWrapper.append(createElem("span", "no-answer__label", "N/A"), createCheckBox("input", "filter__input", "checkbox", ["byClass", "red"]));
+    todayDateWrapper.append(createElem("span", "today-date__label", "Today"), createCheckBox("input", "today-date__input", "checkbox", ["byDate", getTodayDate()]));
   }
 
   function applyFilters(params) {
-    if (!FUTURES.filters) {
-      return;
-    }
-    const rows = document.querySelectorAll("tbody tr");
-
+    if (!FUTURES.filters) return;
+    const rows = getTableRows();
     rows.forEach((tr) => {
       let show = true;
-
       if (params.byStatus.length > 0) {
-        let statusText = tr.children[6]?.textContent.trim();
-
-        if (statusText.startsWith("At Pickup")) {
-          statusText = statusText.slice(0, 9);
-        } else if (statusText.startsWith("At Delivery")) {
-          statusText = statusText.slice(0, 9);
-        }
-
-        if (!params.byStatus.includes(statusText)) {
-          show = false;
-        }
+        let statusText = getStatusFromRow(tr);
+        if (statusText.startsWith("At Pickup")) statusText = statusText.slice(0, 9);
+        else if (statusText.startsWith("At Delivery")) statusText = statusText.slice(0, 9);
+        if (!params.byStatus.includes(statusText)) show = false;
       }
-
       if (show && params.byClass.length > 0) {
         const rowClasses = Array.from(tr.classList);
-        const matchesClass = params.byClass.some((cls) =>
-          rowClasses.includes(cls),
-        );
-        if (!matchesClass) {
-          show = false;
-        }
+        if (!params.byClass.some((cls) => rowClasses.includes(cls))) show = false;
       }
-
       if (params.byDate.length > 0) {
-        let pickDate = tr.children[9]?.textContent.slice(0, 5).trim();
-        let delDate = tr.children[12]?.textContent.slice(0, 5).trim();
-
-        const matchesDate =
-          params.byDate.includes(pickDate) || params.byDate.includes(delDate);
-
-        if (!matchesDate) {
-          show = false;
-        }
+        const dateCells = Array.from(tr.children).filter((td) => /^\d{2}\/\d{2}/.test(td.textContent.trim()));
+        const dates = dateCells.map((td) => td.textContent.trim().slice(0, 5));
+        if (!params.byDate.some((d) => dates.includes(d))) show = false;
       }
-
       tr.style.display = show ? "" : "none";
     });
   }
 
   function addFilterParams(filterType, query, checked) {
-    if (!FUTURES.filters) {
-      return;
-    }
+    if (!FUTURES.filters) return;
     const arr = filterParams[filterType];
-    if (checked) {
-      if (!arr.includes(query)) arr.push(query);
-    } else {
-      const index = arr.indexOf(query);
-      if (index > -1) arr.splice(index, 1);
-    }
-
+    if (checked) { if (!arr.includes(query)) arr.push(query); }
+    else { const index = arr.indexOf(query); if (index > -1) arr.splice(index, 1); }
     applyFilters(filterParams);
   }
-
   //#endregion
 
-  //#region Generage SMS
-
-
-
-
+  //#region Generate SMS
   function createGenerateTxtBtn(fbNum) {
-    if (!FUTURES.generateSMS) {
-      return;
-    }
+    if (!FUTURES.generateSMS || !fbNum) return;
+    if (document.querySelector("button.generate-txt-btn")) return;
 
-    if (document.querySelector("button.generate-txt-btn ")) {
-      return;
-    }
     const btnContainer = getSMSbntContainer();
+    if (!btnContainer) return;
 
     const generateTxtBnt = createElem("button", "generate-txt-btn", "SMS");
+    generateTxtBnt.style.marginLeft = "8px";
+    generateTxtBnt.style.padding = "4px 8px";
+    generateTxtBnt.style.cursor = "pointer";
+    generateTxtBnt.style.borderRadius = "4px";
+    generateTxtBnt.style.border = "1px solid #ccc";
+    generateTxtBnt.style.backgroundColor = "#f0f0f0";
 
     btnContainer.append(generateTxtBnt);
 
     generateTxtBnt.addEventListener("click", () => {
       generateTxtMessage(dispName, fbNum);
     });
+    console.log("✅ Кнопка SMS успішно створена");
   }
 
   function generateTxtMessage(name, fbNum) {
     const cities = getStops();
-    const status = getLoadStatus()
+    if (!cities || cities.length < 2) return;
+    const status = getLoadStatus();
     const messageFirstPart = `Hello , this is ${name} with Landstar Dispatch.\nRegarding load ${cities[0]} -> ${cities[1]} FB# ${fbNum} — `;
-    let messageSecondPart;
+    let messageSecondPart = "";
 
     switch (status) {
-        case "Need to check" :
-             messageSecondPart = `at what time will you be at the pick up in ${cities[0]} ?`
-            break
-        case "ETA Pickup" :
-             messageSecondPart = `have you arrived at the pick up in ${cities[0]} ?`
-            break
-        case "ETA Delivery" :
-             messageSecondPart = `have you arrived at the delivery in ${cities[1]} ?`
-             break
-        case "At Pickup":
-            messageSecondPart = `have you got loaded in ${cities[0]} ?`
-            break
-        case "At Delivery" :
-            messageSecondPart = `have you got empty in ${cities[1]} ?`
-            break
-        case "In Transit/Loaded" :
-            messageSecondPart = `at what time will you be at the delivery in ${cities[1]} ?`
-            break
-        default :
-            messageSecondPart = ``
-
+      case "Need to check": messageSecondPart = `at what time will you be at the pick up in ${cities[0]} ?`; break;
+      case "ETA Pickup": messageSecondPart = `have you arrived at the pick up in ${cities[0]} ?`; break;
+      case "ETA Delivery": messageSecondPart = `have you arrived at the delivery in ${cities[1]} ?`; break;
+      case "At Pickup": messageSecondPart = `have you got loaded in ${cities[0]} ?`; break;
+      case "At Delivery": messageSecondPart = `have you got empty in ${cities[1]} ?`; break;
+      case "In Transit/Loaded": messageSecondPart = `at what time will you be at the delivery in ${cities[1]} ?`; break;
+      default: messageSecondPart = ``;
     }
 
-    getComentField().value = messageFirstPart + messageSecondPart;
+    const field = getComentField();
+    if (field) {
+      field.value = messageFirstPart + messageSecondPart;
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+      field.dispatchEvent(new Event('change', { bubbles: true }));
+    }
   }
 
   function getStops() {
     const stops = document.querySelectorAll(".stop-destination");
-
     if (stops.length > 0) {
-        let firstCity;
-        let lastCity;
+      let firstCity, lastCity;
+      const firstCityParts = stops[0].textContent.split(",");
+      if (firstCityParts.length > 2) firstCity = firstCityParts[0].trim() + ", " + firstCityParts[2].trim();
+      else firstCity = firstCityParts[0].trim() + ", " + firstCityParts[1].trim();
 
-      const firstCityParts = stops[0].textContent.split(",")
-      if (firstCityParts.length > 2) {
-           firstCity = firstCityParts[0].trim() + ", " + firstCityParts[2].trim()
-      } else {
-           firstCity = firstCityParts[0].trim() + ", " + firstCityParts[1].trim()
-      }
-
-      const lastCityParts = stops[stops.length - 1].textContent.split(",")
-      if (lastCityParts.length > 2) {
-           lastCity = lastCityParts[0].trim() + ", " + lastCityParts[2].trim()
-      } else {
-           lastCity = lastCityParts[0].trim() + ", " + lastCityParts[1].trim()
-      }
+      const lastCityParts = stops[stops.length - 1].textContent.split(",");
+      if (lastCityParts.length > 2) lastCity = lastCityParts[0].trim() + ", " + lastCityParts[2].trim();
+      else lastCity = lastCityParts[0].trim() + ", " + lastCityParts[1].trim();
 
       return [firstCity, lastCity];
     }
+    return null;
   }
-
   //#endregion
 
   //#region Observers
-
   const pageLoadingObserver = new MutationObserver(() => {
     if (getTbody() && getTbody().children.length > 30) {
       pageLoadingObserver.disconnect();
 
       createUpdatesCounter();
       createFilters();
-
       hideSideBar();
-
       removerMissingLoads();
       cleanupComments();
-
       createLoadsCounter();
-      const loadsCounterObserver = new MutationObserver(() => {
-        startCount();
-      });
-      loadsCounterObserver.observe(getTbody(), {
-        childList: true,
-        subtree: true,
-        attributes: true,
-        attributeFilter: ["class"],
-      });
+
+      const loadsCounterObserver = new MutationObserver(() => startCount());
+      loadsCounterObserver.observe(getTbody(), { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
     }
   });
-  pageLoadingObserver.observe(document.body, {
-    childList: true,
-    subtree: true,
-  });
+  pageLoadingObserver.observe(document.body, { childList: true, subtree: true });
 
   const highlightObserver = new MutationObserver(() => {
-    if (getTbody() && getTbody().children.length > 0) {
-      restoreUpdatedRows(initUpdated());
-    }
+    if (getTbody() && getTbody().children.length > 0) restoreUpdatedRows(initUpdated());
   });
-
-  highlightObserver.observe(document.body, {
-    childList: true,
-    subtree: true,
-  });
+  highlightObserver.observe(document.body, { childList: true, subtree: true });
   //#endregion
 
   // Обробка кліку на рядок
   document.body.addEventListener("click", (e) => {
     const row = e.target.closest("tr.ng-star-inserted");
-    if (!row) {
-      return;
-    }
+    if (!row) return;
 
-    // Observer на модальне вікно
+    console.log("🖱️ [КЛІК] Клік по рядку виявлено. Чекаємо на модалку...");
+
     const modalObserver = new MutationObserver((mutations, obs) => {
       const stopsWrapper = document.querySelector("div.stops-wrapper");
-      const statusEl = document.querySelector("span.mat-mdc-select-min-line"); // треба дочекатись завантаження елемента перед отриманням статуса getLoadStatus
+      const statusEl = document.querySelector("span.mat-mdc-select-min-line");
       const fbEl = document.querySelector(".m-r-1 a");
-      const commentWrapper = document
-        .querySelector("div.dispatch-comments")
-        ?.querySelector("div.comments__regular");
-      const editBnt = getEditBtn();
+      const commentWrapper = document.querySelector("div.dispatch-comments")?.querySelector("div.comments__regular");
+      const editBtn = getEditBtn(); // Отримуємо саму кнопку
       const smsBtnContainer = getSMSbntContainer();
       const commentField = getComentField();
-      const fb = Number(fbEl.textContent.trim());
-      //const status = statusEl.textContent.trim(); // change for get statusFunction
-        const status = getLoadStatus()
 
-      // чекаємо всі потрібні елементи
-      if (
-        !stopsWrapper ||
-        !statusEl ||
-        !fbEl ||
-        !fb ||
-        !status ||
-        !commentWrapper ||
-        !editBnt ||
-        !smsBtnContainer ||
-        !commentField
-      ) {
+      if (!stopsWrapper || !statusEl || !fbEl || !commentWrapper || !editBtn || !smsBtnContainer || !commentField) {
         return;
       }
 
-      console.log("=== ПОЧАТОК ОБРОБКИ ===");
-      console.log("FB отриманий:", fb);
-      console.log("Тип FB:", typeof fb);
-      console.log("FB === 0?", fb === 0);
-      console.log("isNaN(fb)?", isNaN(fb));
+      if (modalObserver._processed) return;
 
-      // створюємо кнопку SMS
+      const fbMatch = fbEl.textContent.match(/(\d+)/);
+      const fb = fbMatch ? Number(fbMatch[1]) : null;
+
+      console.log("✅ [МОДАЛКА] Елементи знайдено!");
+      console.log(`👉 FB: ${fb}`);
+
+      if (!fb) {
+        console.warn("⚠️ FB не знайдено, чекаємо...");
+        return;
+      }
+
+      modalObserver._processed = true;
+      const status = getLoadStatus();
+      console.log(`👉 Status: ${status}`);
+
       createGenerateTxtBtn(fb);
 
-      // --- Comment поле ---
       if (status === "At Pickup" || status === "At Delivery") {
         generateComment(fb, status, commentWrapper);
 
-        commentField.addEventListener(
-          "click",
-          () => {
-            const postBtn = getPostComentBtn();
-            if (!postBtn) return;
+        commentField.addEventListener("click", () => {
+          const postBtn = getPostComentBtn();
+          if (!postBtn) {
+            console.warn("⚠️ Кнопка Post Comment не знайдена");
+            return;
+          }
 
-            // ⭐ Іменована функція для правильного видалення
-            const handlePostClick = () => {
+          const handlePostClick = () => {
+            try {
+              const date = new Date();
+              saveComment({
+                fb: fb,
+                status: status,
+                comment: commentField.value,
+                commentTime: `${date.getHours()}:${String(date.getMinutes()).padStart(2, "0")}`,
+                timeZone: findTimeZone(),
+                inTime: findInTime(),
+              });
+              console.log("✅ Коментар збережено");
+            } catch (error) {
+              console.error("❌ Помилка збереження коментаря:", error);
+            }
+          };
+
+          if (postBtn._handlePostClick) postBtn.removeEventListener("click", postBtn._handlePostClick);
+          postBtn._handlePostClick = handlePostClick;
+          postBtn.addEventListener("click", handlePostClick);
+        }, { once: true });
+      }
+
+      // --- ВИПРАВЛЕННЯ ДЛЯ КНОПКИ EDIT ---
+      if (editBtn) {
+        console.log("👉 Знайдено кнопку Edit (олівець)");
+
+        // Знаходимо батьківський блок, який містить цю кнопку (зазвичай це .middleline або .d-flex)
+        // і вішаємо обробник на нього. Це дозволить клікати навіть на відступи навколо іконки.
+        const editContainer = editBtn.closest('.d-flex') || editBtn.parentElement;
+
+        const handleEditClick = (event) => {
+          // Перевіряємо, чи клік був саме по кнопці або всередині неї
+          if (!editBtn.contains(event.target)) return;
+
+          console.log("🖱️ [EDIT] Натиснуто кнопку редагування, чекаємо на форму...");
+
+          const timesObserver = new MutationObserver(() => {
+            const timesWrapper = document.querySelector("div.m-y-5");
+            if (!timesWrapper) return;
+
+            const timeInputs = timesWrapper.querySelectorAll("input.mat-mdc-input-element");
+            if (timeInputs.length === 0) return;
+
+            console.log(`✅ [EDIT] Знайдено ${timeInputs.length} інпутів для часу`);
+
+            const initialTimesCount = countTimes(timeInputs).length;
+            const saveBtn = getSaveBtn();
+
+            if (!saveBtn) {
+              console.warn("❌ Кнопка Save (збереження) не знайдена!");
+              return;
+            }
+
+            console.log("✅ Кнопка Save знайдена! Вішаємо обробник...");
+
+            const handleSaveClick = async () => {
               try {
-                const date = new Date();
-                saveComment({
-                  fb: fb,
-                  status: status,
-                  comment: commentField.value,
-                  commentTime: `${date.getHours()}:${String(date.getMinutes()).padStart(2, "0")}`,
-                  timeZone: findTimeZone(),
-                  inTime: findInTime(),
-                });
-                console.log("✅ Коментар збережений");
+                console.log("🖱️ [SAVE] Натиснуто кнопку збереження!");
+                const finalTimesCount = countTimes(timeInputs).length;
+                console.log(`👉 Було часів: ${initialTimesCount}, Стало: ${finalTimesCount}`);
+
+                updatedState = initUpdated();
+
+                let isNewLoad = false;
+
+                if (initialTimesCount !== finalTimesCount && !updatedState.updated.includes(fb)) {
+                  updatedState.updated.push(fb);
+                  updatedState.loads = (updatedState.loads || 0) + 1;
+                  isNewLoad = true;
+                }
+
+                updatedState.updates = (updatedState.updates || 0) + 1;
+
+                await StorageQueue.enqueue("updated", JSON.stringify(updatedState));
+                showStats();
+                console.log(`✅ [SAVE] Успіх! Updates: ${updatedState.updates}, Loads: ${updatedState.loads}. Новий вантаж: ${isNewLoad}`);
               } catch (error) {
-                console.error("❌ Помилка:", error);
+                console.error("❌ Помилка при збереженні:", error);
               }
             };
 
-            // ⭐ Видалити попередній listener
-            if (postBtn._handlePostClick) {
-              postBtn.removeEventListener("click", postBtn._handlePostClick);
+            if (saveBtn._handleSaveClick) {
+              saveBtn.removeEventListener("click", saveBtn._handleSaveClick);
             }
 
-            // ⭐ Зберегти нову функцію
-            postBtn._handlePostClick = handlePostClick;
-            postBtn.addEventListener("click", handlePostClick);
-          },
-          { once: true },
-        ); // ⭐ { once: true } - listener спрацьовує один раз!
+            saveBtn._handleSaveClick = handleSaveClick;
+            saveBtn.addEventListener("click", handleSaveClick);
+
+            timesObserver.disconnect();
+          });
+
+          timesObserver.observe(document.body, { childList: true, subtree: true });
+        };
+
+        // Видаляємо старий обробник, якщо він був
+        if (editContainer._handleEditClick) {
+          editContainer.removeEventListener("click", editContainer._handleEditClick);
+        }
+
+        // Вішаємо новий обробник на контейнер
+        editContainer._handleEditClick = handleEditClick;
+        editContainer.addEventListener("click", handleEditClick);
       }
 
-      // --- Edit + Save поле ---
-      if (editBnt) {
-        editBnt.addEventListener(
-          "click",
-          () => {
-            const timesObserver = new MutationObserver(() => {
-              const timesWrapper = document.querySelector("div.m-y-5");
-              if (!timesWrapper) return;
-
-             const timeInputs = timesWrapper.querySelectorAll(
-    "input.mat-mdc-input-element",
-);
-
-if (timeInputs.length === 0) {
-    console.log("⏳ Inputs ще не завантажились...");
-    return;
-}
-
-              // ⭐ Отримуємо кількість часів при завантаженні модалки
-              console.log("=== INITIAL CHECK ===");
-
-console.log("timeInputs.length =", timeInputs.length);
-
-timeInputs.forEach((el, i) => {
-  console.log(i, `"${el.value}"`);
-});
-
-const initialTimes = countTimes(timeInputs);
-
-console.log("countTimes() =", initialTimes);
-
-const initialTimesCount = initialTimes.length;
-
-console.log(
-  "🕐 При завантаженні модалки було часів:",
-  initialTimesCount,
-);
-
-              const saveBtn = getSaveBtn();
-              if (!saveBtn) return;
-
-              const handleSaveClick = async () => {
-                try {
-                  console.log("=== SAVE CLICKED ===");
-
-                  const finalTimesCount = countTimes(timeInputs).length;
-                  console.log("🕐 Після редагування часів:", finalTimesCount);
-
-                  // ⭐ Читаємо ТІ ЖЕ дані що були при завантаженні
-                  updatedState = initUpdated();
-                  console.log(
-                    "FB у updated ДО:",
-                    updatedState.updated.includes(fb),
-                  );
-
-                  let isNewLoad = false;
-
-                  if (
-                    initialTimesCount !== finalTimesCount &&
-                    !updatedState.updated.includes(fb)
-                  ) {
-                    console.log("✅ НОВИЙ LOAD - додаємо");
-                    isNewLoad = true;
-
-                    // ⭐ Додаємо FB у ЛО��АЛЬНИЙ updated array
-                    updatedState.updated.push(fb);
-                    updatedState.loads = (updatedState.loads || 0) + 1;
-                    console.log(
-                      `📝 Локально додали FB ${fb}, loads=${updatedState.loads}`,
-                    );
-
-                    // ⭐ Записуємо ВСЕ за один раз
-                    await StorageQueue.enqueue(
-                      "updated",
-                      JSON.stringify(updatedState),
-                    );
-                    console.log("✅ Записано в localStorage");
-                  }
-
-                  // ⭐ Updates ЗАВЖДИ додаємо
-                  updatedState.updates = (updatedState.updates || 0) + 1;
-                  await StorageQueue.enqueue(
-                    "updated",
-                    JSON.stringify(updatedState),
-                  );
-                  console.log(`📊 Updates=${updatedState.updates}`);
-
-                  showStats();
-                  console.log("✅ Все завершено");
-                } catch (error) {
-                  console.error("❌ Помилка:", error);
-                }
-              };
-
-              if (saveBtn._handleSaveClick) {
-                saveBtn.removeEventListener("click", saveBtn._handleSaveClick);
-              }
-
-              saveBtn._handleSaveClick = handleSaveClick;
-              saveBtn.addEventListener("click", handleSaveClick);
-
-              console.log("✅ Listener додано на SAVE кнопку");
-
-              timesObserver.disconnect();
-            });
-
-            timesObserver.observe(document.body, {
-              childList: true,
-              subtree: true,
-            });
-          },
-          { once: true },
-        );
-      }
-
-      // observer можна вимкнути, бо все налаштовано
       modalObserver.disconnect();
     });
 
