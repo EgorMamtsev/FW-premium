@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         for new tms - final version
+// @name         for new tms - smart EL attachment counter
 // @namespace    http://tampermonkey.net/
-// @version      2026-11-04-33
-// @description  Loop check with spinner wait and content check
+// @version      2026-11-17-5
+// @description  Loop check counting attachments only for EL (blue) delivered loads
 // @author       You
 // @match        https://landstar.mercurygate.net/MercuryGate/dashboard/wide/dashboardFrameless.jsp
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=mercurygate.net
@@ -98,7 +98,12 @@ function insertData() {
   const dataArray = input.value.split(",").map(Number);
   localStorage.setItem("needToCheck", JSON.stringify(dataArray));
   localStorage.removeItem("index");
-  localStorage.setItem("checkResults", JSON.stringify({ locked: [], unavailable: [] }));
+  
+  localStorage.setItem("checkResults", JSON.stringify({ 
+    under_10: [], 
+    from_10_to_12: [], 
+    from_13_plus: []
+  }));
 
   const oldResult = document.querySelector(".locked-results-block");
   if (oldResult) oldResult.remove();
@@ -123,7 +128,12 @@ function getCurrentFB() {
 }
 
 function saveResult(type, fb) {
-  const results = JSON.parse(localStorage.getItem("checkResults")) || { locked: [], unavailable: [] };
+  const results = JSON.parse(localStorage.getItem("checkResults")) || { 
+    under_10: [], 
+    from_10_to_12: [], 
+    from_13_plus: []
+  };
+  
   if (!results[type].includes(fb)) {
     results[type].push(fb);
     localStorage.setItem("checkResults", JSON.stringify(results));
@@ -148,7 +158,11 @@ function startChecking() {
   }
 
   if (localStorage.getItem("checkResults") === null) {
-    localStorage.setItem("checkResults", JSON.stringify({ locked: [], unavailable: [] }));
+    localStorage.setItem("checkResults", JSON.stringify({ 
+      under_10: [], 
+      from_10_to_12: [], 
+      from_13_plus: []
+    }));
   }
 
   processNextFB();
@@ -202,25 +216,36 @@ function processNextFB() {
     goBtn.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, clientX: btnX, clientY: btnY }));
     goBtn.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: btnX, clientY: btnY }));
 
-    // 3. Чекаємо, поки модалка завантажиться (спінер зникне І з'явиться контент)
+    // 3. Чекаємо, поки модалка завантажиться
     waitForModalToLoad().then((modal) => {
       console.log("Модалка завантажена. Аналізуємо результат...");
 
-      // 4. Тепер перевіряємо, що всередині (замок або No Results)
+      // 4. Перевіряємо статус та кількість вкладень
       const result = checkModalResult(modal);
 
       if (result.type === "unavailable") {
-        console.log(`⚠️ ${currentFB} — не знайдено в системі (No Results).`);
-        saveResult("unavailable", currentFB);
+        console.log(`⚠️ ${currentFB} — не знайдено в системі.`);
       }
-      else if (result.type === "locked") {
-        saveResult("locked", currentFB);
-      }
-      else if (result.type === "unlocked") {
-        console.log(`🔵 ${currentFB} — unlocked (skipped).`);
+      else if (result.type === "not_delivered") {
+        console.log(`⚪ ${currentFB} — статус не Delivered. Пропускаємо.`);
       }
       else {
-        console.warn(`Для ${currentFB} результат невідомий.`);
+        // Розподіляємо за категоріями
+        if (result.type === "under_10") {
+          saveResult("under_10", currentFB);
+          console.log(`🔴 ${currentFB} — Delivered, <10 вкладень (${result.count}). Збережено.`);
+        }
+        else if (result.type === "from_10_to_12") {
+          saveResult("from_10_to_12", currentFB);
+          console.log(`🟡 ${currentFB} — Delivered, 10-12 вкладень (${result.count}). Збережено.`);
+        }
+        else if (result.type === "from_13_plus") {
+          saveResult("from_13_plus", currentFB);
+          console.log(`🟢 ${currentFB} — Delivered, 13+ вкладень (${result.count}). Збережено.`);
+        }
+        else {
+          console.log(`❓ ${currentFB} — невідомий результат.`);
+        }
       }
 
       // 5. Закриваємо модалку
@@ -259,20 +284,16 @@ function waitForElement(selector) {
   });
 }
 
-// ЧЕКАЄМО, ПОКИ МОДАЛКА ЗАВАНТАЖИТЬСЯ (СПІНЕР ЗНИКНЕ І З'ЯВИТЬСЯ КОНТЕНТ)
+// ЧЕКАЄМО, ПОКИ МОДАЛКА ЗАВАНТАЖИТЬСЯ
 function waitForModalToLoad() {
   return new Promise((resolve) => {
-    // 1. Чекаємо на появу модалки
     waitForElement("#tms-app-modal-container").then((modal) => {
       console.log("Модалка з'явилась. Чекаємо на завантаження...");
 
       const checkContentLoaded = () => {
-        // Перевіряємо, чи зник спінер
         const spinner = modal.querySelector(".uxloadmask");
         const spinnerGone = !spinner;
 
-        // Перевіряємо, чи з'явився контент:
-        // або картка з вантажем (.mg-lock-container), або блок "No Results" (.global-search-no-results-wrapper)
         const hasCard = modal.querySelector(".mg-lock-container");
         const hasNoResults = modal.querySelector(".global-search-no-results-wrapper");
 
@@ -283,10 +304,8 @@ function waitForModalToLoad() {
         return false;
       };
 
-      // Якщо все вже завантажено (швидкий інтернет) — одразу повертаємо
       if (checkContentLoaded()) return;
 
-      // Інакше чекаємо на зміни в DOM
       const observer = new MutationObserver((mutations, obs) => {
         if (checkContentLoaded()) {
           obs.disconnect();
@@ -298,7 +317,7 @@ function waitForModalToLoad() {
   });
 }
 
-// ПЕРЕВІРКА РЕЗУЛЬТАТУ В МОДАЛЦІ
+// ПЕРЕВІРКА РЕЗУЛЬТАТУ (ШУКАЄМО САМЕ СИНІЙ БЛОК EL)
 function checkModalResult(modal) {
   // 1. Перевіряємо, чи є блок "No Results"
   const noResultsWrapper = modal.querySelector(".global-search-no-results-wrapper");
@@ -306,25 +325,62 @@ function checkModalResult(modal) {
     return { type: "unavailable" };
   }
 
-  // 2. Перевіряємо, чи є іконка замка
-  const lockContainer = modal.querySelector(".mg-lock-container");
-  if (lockContainer) {
-    const span = lockContainer.querySelector("span");
-    if (span && span.classList.contains("mg-lock-icon")) {
-      return { type: "locked" };
-    }
-    if (span && span.classList.contains("mg-unlock-icon")) {
-      return { type: "unlocked" };
-    }
-    const svg = lockContainer.querySelector("svg");
-    if (svg && svg.classList.contains("mg-lock-icon")) {
-      return { type: "locked" };
-    }
-    if (svg && svg.classList.contains("mg-unlock-icon")) {
-      return { type: "unlocked" };
+  // 2. Перевіряємо, чи є статус "Delivered" хоч в одному блоці
+  let isDelivered = false;
+  const statusElements = modal.querySelectorAll(".status-component .sc-status");
+  for (const el of statusElements) {
+    if (el.textContent.trim() === "Delivered") {
+      isDelivered = true;
+      break;
     }
   }
-  return { type: "unknown" };
+
+  if (!isDelivered) {
+    return { type: "not_delivered" };
+  }
+
+  // 3. Знаходимо САМЕ СИНІЙ БЛОК (EL)
+  let targetBlock = null;
+  const loadCards = modal.querySelectorAll(".mg-global-search-resultsMatch .loadheader-section");
+  
+  for (const card of loadCards) {
+    // Перевіряємо, чи є в цьому блоці ідентифікатор EL
+    const elIdElement = card.querySelector(".loadheader-identity a[id^='loadheader-identity-EL']");
+    if (elIdElement) {
+      targetBlock = card;
+      break;
+    }
+  }
+
+  if (!targetBlock && loadCards.length > 0) {
+    // Fallback: беремо перший-ліпший блок, якщо EL не знайдено
+    targetBlock = loadCards[0];
+    console.log("⚠️ Не знайдено блок EL, беремо перший-ліпший.");
+  }
+
+  // 4. Шукаємо кількість вкладень САМЕ В ЦЬОМУ БЛОЦІ
+  let attachmentCount = 0;
+  
+  if (targetBlock) {
+    const attachmentsContainer = targetBlock.querySelector(".attachments");
+    if (attachmentsContainer) {
+      const badge = attachmentsContainer.querySelector(".badge-container");
+      if (badge) {
+        attachmentCount = parseInt(badge.textContent.trim(), 10) || 0;
+      }
+    }
+  }
+
+  console.log(`Знайдено Delivered. Кількість вкладень (синій блок EL): ${attachmentCount}`);
+
+  // 5. Розподіляємо за категоріями
+  if (attachmentCount < 10) {
+    return { type: "under_10", count: attachmentCount };
+  } else if (attachmentCount >= 10 && attachmentCount <= 12) {
+    return { type: "from_10_to_12", count: attachmentCount };
+  } else {
+    return { type: "from_13_plus", count: attachmentCount };
+  }
 }
 
 // ЗАКРИТТЯ МОДАЛКИ
@@ -343,7 +399,11 @@ function closeModal(modal) {
 
 // ФІНАЛЬНЕ ПОВІДОМЛЕННЯ ТА БЛОК РЕЗУЛЬТАТІВ
 function showFinishMessage() {
-  const results = JSON.parse(localStorage.getItem("checkResults")) || { locked: [], unavailable: [] };
+  const results = JSON.parse(localStorage.getItem("checkResults")) || { 
+    under_10: [], 
+    from_10_to_12: [], 
+    from_13_plus: []
+  };
   console.log("=== Перевірка завершена ===");
   console.log("Результати:", results);
 
@@ -360,37 +420,53 @@ function showFinishMessage() {
   resultBlock.style.fontSize = "13px";
   resultBlock.style.width = "100%";
   resultBlock.style.boxSizing = "border-box";
-  resultBlock.style.maxHeight = "200px";
+  resultBlock.style.maxHeight = "400px";
   resultBlock.style.overflowY = "auto";
 
   const title = document.createElement("strong");
-  title.textContent = "Результати перевірки:";
+  title.textContent = "Результати перевірки (Delivered):";
   resultBlock.append(title);
   resultBlock.append(document.createElement("br"));
 
-  if (results.locked.length > 0) {
-    const lockedTitle = document.createElement("div");
-    lockedTitle.innerHTML = "<b style='color: red;'>🔴 Locked:</b>";
-    resultBlock.append(lockedTitle);
-    results.locked.forEach(fb => {
+  // Категорія 1: < 10
+  if (results.under_10.length > 0) {
+    const title1 = document.createElement("div");
+    title1.innerHTML = "<b style='color: red;'>🔴 До 9 вкладень:</b>";
+    resultBlock.append(title1);
+    results.under_10.forEach(fb => {
+      const span = document.createElement("div");
+      span.textContent = fb;
+      resultBlock.append(span);
+    });
+    resultBlock.append(document.createElement("br"));
+  }
+
+  // Категорія 2: 10-12
+  if (results.from_10_to_12.length > 0) {
+    const title2 = document.createElement("div");
+    title2.innerHTML = "<b style='color: orange;'>🟡 10-12 вкладень:</b>";
+    resultBlock.append(title2);
+    results.from_10_to_12.forEach(fb => {
+      const span = document.createElement("div");
+      span.textContent = fb;
+      resultBlock.append(span);
+    });
+    resultBlock.append(document.createElement("br"));
+  }
+
+  // Категорія 3: 13+
+  if (results.from_13_plus.length > 0) {
+    const title3 = document.createElement("div");
+    title3.innerHTML = "<b style='color: green;'>🟢 13+ вкладень:</b>";
+    resultBlock.append(title3);
+    results.from_13_plus.forEach(fb => {
       const span = document.createElement("div");
       span.textContent = fb;
       resultBlock.append(span);
     });
   }
 
-  if (results.unavailable.length > 0) {
-    const unavailableTitle = document.createElement("div");
-    unavailableTitle.innerHTML = "<b style='color: gray;'>⚪ Unavailable (No Results):</b>";
-    resultBlock.append(unavailableTitle);
-    results.unavailable.forEach(fb => {
-      const span = document.createElement("div");
-      span.textContent = fb;
-      resultBlock.append(span);
-    });
-  }
-
-  if (results.locked.length === 0 && results.unavailable.length === 0) {
+  if (results.under_10.length === 0 && results.from_10_to_12.length === 0 && results.from_13_plus.length === 0) {
     const empty = document.createElement("span");
     empty.textContent = "Нічого не знайдено.";
     resultBlock.append(empty);
