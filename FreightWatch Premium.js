@@ -224,7 +224,7 @@
 
   let updatedState = initUpdated();
 
-  function restoreUpdatedRows(state) {
+  /*function restoreUpdatedRows(state) {
     if (!FUTURES.markUpdates) return;
     const tbody = getTbody();
     if (!tbody) return;
@@ -241,7 +241,7 @@
         textElement.classList.add("updated");
       }
     });
-  }
+  } */
 
   function removerMissingLoads() {
     const tbody = getTbody();
